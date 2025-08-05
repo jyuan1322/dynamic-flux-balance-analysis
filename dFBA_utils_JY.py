@@ -113,36 +113,6 @@ def logistic_derivative(t, A, K, B, M):
     denominator = (1 + exp_term) ** 2
     return numerator / denominator  # dC/dt
 
-'''
-def logistic_fit(times, concentrations):
-    """
-    Fit a logistic curve to the given time and concentration data.
-    
-    Parameters:
-        times (array-like): Time points.
-        concentrations (array-like): Concentration values at those time points.
-    
-    Returns:
-        tuple: Fitted parameters (A, K, B, M).
-    """
-    from scipy.optimize import curve_fit
-
-    # Define the logistic function
-    def logistic(t, A, K, B, M):
-        return A + (K - A) / (1 + np.exp(-B * (t - M)))
-
-    # Initial parameter guess: A=0, K=1, B=0.2, M=24
-    # proline
-    # p0 = [0, 1, 0.2, 24]
-    # glucose
-    p0 = [10, 30, 0.15, 36]
-
-    # Fit the curve
-    params, covariance = curve_fit(logistic, times, concentrations, p0=p0)
-
-    # A_fit, K_fit, B_fit, M_fit = params
-    return params
-'''
 def logistic_fit(times, concentrations):
     from scipy.optimize import curve_fit
     A0 = np.min(concentrations)

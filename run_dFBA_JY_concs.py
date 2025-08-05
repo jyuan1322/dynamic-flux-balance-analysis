@@ -1,8 +1,13 @@
+import os
 import cobra as cb
 import networkx as nx
 import numpy as np
 import pandas as pd
+from typing import Tuple
 from scipy import integrate
+from scipy.stats import norm
+from scipy.interpolate import UnivariateSpline
+from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 from networkx.algorithms.traversal.depth_first_search import dfs_tree
 from networkx.drawing.nx_agraph import graphviz_layout
@@ -11,13 +16,179 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from dFBA_JY import dFBA, MetaboliteConstraint
-from dfba_utils_JY import *
+from dFBA_utils_JY import *
 
 # 1. Load model
 objective = "ATP_sink"
 modelfile = "/data/local/jy1008/MA-host-microbiome/nmr-cdiff/data/icdf843.json"
 model = cb.io.load_json_model(modelfile)
 model.objective = objective
+
+
+pro_csv_paths = [
+    "concentration_estimation/Data1_13CPro1_areas.csv",
+    "concentration_estimation/Data2_13CPro2_areas.csv",
+    "concentration_estimation/Data3_13CPro3_areas.csv"
+]
+
+def get_time_correction(csv_path, isocaproate_col="Isocaproate 0.8479", smooth_sigma=1.0, thresh=0.05, plot=False):
+    """
+    Load an NMR time series and determine reaction start time based on the start of 
+    isocaproate production. This is a correction factor to be applied to the rest of
+    the experiment.
+    """
+    df = pd.read_csv(csv_path)
+    times = df["Time"].values
+    isocaproate_concs = df[isocaproate_col].values
+    # Smooth signal
+    conc_smooth = gaussian_filter1d(isocaproate_concs, sigma=smooth_sigma)
+    # Get derivative of conc over time
+    dCdt = np.gradient(conc_smooth, times)
+    # Get the max derivative, and then take the threshold as a fraction of that
+    max_dCdt = np.max(dCdt)
+    max_time = times[np.argmax(dCdt)]
+    threshold = thresh * max_dCdt  # 10% of max
+    # Find the first time where the derivative exceeds the threshold
+    start_time = times[np.where(dCdt > threshold)[0][0]]
+    # plot the max derivative and threshold over the concentration time series
+    if plot:
+        plt.figure(figsize=(10, 5))
+        plt.plot(times, isocaproate_concs, label='Isocaproate Concentration')
+        plt.plot(times, conc_smooth, label='Smoothed Concentration', linestyle='--')
+        plt.plot(times, dCdt, label='Derivative of Concentration', color='orange')
+        plt.axvline(start_time, color='green', linestyle='--', label='Start Time')
+        plt.axvline(max_time, color='red', linestyle='--', label='Max Derivative Time')
+        plt.xlabel('Time (hours)')
+        plt.ylabel('Concentration / Derivative')
+        plt.title(f'Isocaproate Production Start Time {os.path.basename(csv_path)}')
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+    return start_time
+for csv_path in pro_csv_paths:
+    start_time = get_time_correction(csv_path, thresh=0.05, plot=True)
+    print(f"Start time for {os.path.basename(csv_path)}: {start_time:.2f} hours")
+
+# Create a function f(t) which returns a lower and upper bound for the flux at time t.
+# This version calculates bounds based on a mean and std obtained directly from the
+# sample data.
+def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=0.5, plot=False):
+    df = pd.read_csv(csv_path)
+    # Correct for time offset
+    start_time = get_time_correction(csv_path, thresh=0.05, plot=False)
+    corrected_times = df['Time'] - start_time
+
+    # Scale the concentrations to mMol using the recorded initial concentration
+    # Use these values going forward
+    scale_factor = initial_concentration / df[target_col][0]
+    scaled_concs = df[target_col] * scale_factor
+    # Subtract minimum to normalize to 0 if there are negative values
+    if(scaled_concs.min() < 0):
+        scaled_concs = scaled_concs - scaled_concs.min()
+
+    # To estimate the mean flux, precompute the interpolation spline and its derivative
+    spline = UnivariateSpline(corrected_times, scaled_concs, s=smoothing_factor)
+    spline_derivative = spline.derivative()
+    # To estimate the CI of the flux, calculate point-wise derivatives in a window around t
+    window = 5
+    ci = 0.95  # Confidence interval
+    z = norm.ppf((1 + ci) / 2)
+
+    def flux_fn(t):
+        """
+        Returns a lower and upper bound for the flux at time t.
+        This uses bootstrapped interpolated curves to estimate the bounds.
+        """
+        flux_est = spline_derivative(t)
+        # Get points within the window around t
+        mask = np.abs(corrected_times - t) <= window
+        # NOTE: want position-based indexing in numpy, not label-based in pandas
+        local_times = corrected_times[mask].to_numpy()
+        local_concs = scaled_concs[mask].to_numpy()
+
+        # Require at least 2 points to compute finite differences
+        if len(local_times) < 2:
+            # Fallback: global std of spline derivative
+            full_t = np.linspace(corrected_times.min(), corrected_times.max(), 1000)
+            full_derivs = spline_derivative(full_t)
+            global_std = np.std(full_derivs, ddof=1)  # Use ddof=1 for sample std
+
+            mean_flux = spline_derivative(t)
+            lower = mean_flux - z * global_std
+            upper = mean_flux + z * global_std
+            return mean_flux, lower, upper
+
+        dt = np.diff(local_times)
+        dc = np.diff(local_concs)
+        finite_derivs = dc / dt
+
+        # Midpoints of finite differences
+        t_mid = (local_times[:-1] + local_times[1:]) / 2
+
+        # Residuals between spline and finite diff
+        spline_vals_at_mid = spline_derivative(t_mid)
+        residuals = finite_derivs - spline_vals_at_mid
+
+        # ddof=1 is used for sample standard deviation
+        std = np.std(residuals, ddof=1) if len(residuals) > 1 else 0.0
+        lower = flux_est - z * std
+        upper = flux_est + z * std
+
+        return (flux_est, lower, upper)
+
+    def flux_fn_wrap(t):
+        """
+        Returns only the lower and upper bounds for the flux at time t.
+        """
+        mean, lower, upper = flux_fn(t)
+        return (lower, upper)
+
+    # Optional plotting
+    if plot:
+        t_fit = np.linspace(corrected_times.min(), corrected_times.max(), 1000)
+        # Evaluate flux_fn at each t
+        bounds = [flux_fn(t) for t in t_fit]
+
+        # Unpack into lower and upper bound arrays
+        means, lower_bounds, upper_bounds = zip(*bounds)
+        means = np.array(means)
+        lower_bounds = np.array(lower_bounds)
+        upper_bounds = np.array(upper_bounds)
+
+        plt.figure(figsize=(8, 5))
+
+        # CI bounds
+        plt.fill_between(t_fit, lower_bounds, upper_bounds, color='gray', alpha=0.3, label='Flux ± 0.95CI')
+
+        # Experimental data
+        plt.scatter(corrected_times, scaled_concs, label="Experimental Concentrations", markersize=4)
+
+        # Also plot the finite difference estimates at each point
+        t = corrected_times.to_numpy()
+        c = scaled_concs.to_numpy()
+        dt = np.diff(t)
+        dc = np.diff(c)
+        # Centered finite differences (size N-2), could be padded later
+        finite_deriv = np.empty_like(c)
+        finite_deriv[1:-1] = (c[2:] - c[:-2]) / (t[2:] - t[:-2])
+        # Forward/backward for edges
+        finite_deriv[0] = (c[1] - c[0]) / (t[1] - t[0])
+        finite_deriv[-1] = (c[-1] - c[-2]) / (t[-1] - t[-2])
+        plt.plot(corrected_times, finite_deriv, 'o', label='Finite Difference dC/dt', markersize=4)
+
+        # Mean
+        plt.plot(t_fit, means, label='Mean Flux')
+        
+        plt.xlabel('Time')
+        plt.ylabel(f"{target_col} (scaled to {initial_concentration} mMol)")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    return flux_fn_wrap
+
+
+
 
 
 def fit_logistic_with_bounds(target_col, csv_paths, initial_concentration, constraint_func=None, plot=False):
@@ -100,52 +271,27 @@ def fit_logistic_with_bounds(target_col, csv_paths, initial_concentration, const
 
 
 # need to define timecourse somewhere
-timecourse, proL_concs = simulate_proline(seed=42)
-proL_params = logistic_fit(timecourse, proL_concs)
-
-timecourse, glu_concs = simulate_glucose(seed=42)
-glu_params = logistic_fit(timecourse, glu_concs)
-
+timecourse = np.linspace(0, 48, 100)
 
 # Generate fitted curve
 def plot_fit(timecourse, concs, params, outname):
-    # t_fit = np.linspace(times.min(), times.max(), 100)
     y_fit = logistic(timecourse, *params)
     y_flux = logistic_derivative(timecourse, *params)
 
     # Plot data + fit
-    # plt.scatter(timecourse, proL_concs, label="simul", color="blue")
     plt.scatter(timecourse, concs, label="simul", color="blue")
     plt.plot(timecourse, y_fit, label="Logistic fit", color="red")
     plt.plot(timecourse, y_flux, label="Logistic flux", color="green")
     plt.xlabel("Time")
     plt.ylabel("Concentration")
     plt.legend()
-    # plt.savefig("proline_simulated_fit.pdf", dpi=300)
-    # plt.savefig("glucose_simulated_fit.pdf", dpi=300)
     plt.savefig(outname, dpi=300)
     plt.close()
-plot_fit(timecourse, proL_concs, proL_params, "proline_simulated_fit.pdf")
-plot_fit(timecourse, glu_concs, glu_params, "glucose_simulated_fit.pdf")
+# plot_fit(timecourse, proL_concs, proL_params, "proline_simulated_fit.pdf")
+# plot_fit(timecourse, glu_concs, glu_params, "glucose_simulated_fit.pdf")
 
 
-# create constraint functions dynamically based on trained parameters
-def make_logistic_flux_fn(*params, dummy_stderr=0.05):
-    # A_fit, K_fit, B_fit, M_fit = params
-    def logistic_flux_fn(t):
-        # 'a' and 'b' treated as constants here
-        val = logistic_derivative(t, *params)
-        # multiply by -1 because positive flux is when proL is consumed
-        val *= -1
-        print(f"[DEBUG] t={t:.1f}, dC/dt = {val:.4e}")  # <- Add this
-        # upper and lower bounds are the same
-        # min(x, x) reduces the chance of numerical errors
-        # return (min(val, val), max(val, val))
-        lb = val * (1 - dummy_stderr)
-        ub = val * (1 + dummy_stderr)
-        return (lb, ub)
-    return logistic_flux_fn
-
+# Constraint function
 def make_logistic_flux_fn_bounded(params_lb, params_ub):
     # A_fit, K_fit, B_fit, M_fit = params
     def logistic_flux_fn(t):
@@ -166,11 +312,6 @@ def make_logistic_flux_fn_bounded(params_lb, params_ub):
         ub = max(val_lb, val_ub)
         return (lb, ub)
     return logistic_flux_fn
-
-# proL_constraint_func = make_logistic_flux_fn(*proL_params)
-# glu_constraint_func = make_logistic_flux_fn(*glu_params)
-
-
 
 pro_lb, pro_ub, pro_constraint_fn = fit_logistic_with_bounds(
     target_col="Proline 4.2469",

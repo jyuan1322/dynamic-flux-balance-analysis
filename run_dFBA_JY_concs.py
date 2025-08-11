@@ -18,13 +18,6 @@ import plotly.graph_objects as go
 from dFBA_JY import dFBA, MetaboliteConstraint
 from dFBA_utils_JY import *
 
-# 1. Load model
-objective = "ATP_sink"
-modelfile = "/data/local/jy1008/MA-host-microbiome/nmr-cdiff/data/icdf843.json"
-model = cb.io.load_json_model(modelfile)
-model.objective = objective
-
-
 
 def get_time_correction(csv_path, isocaproate_col="Isocaproate 0.8479", smooth_sigma=1.0, thresh=0.05, plot=False):
     """
@@ -63,6 +56,48 @@ def get_time_correction(csv_path, isocaproate_col="Isocaproate 0.8479", smooth_s
 # for csv_path in pro_csv_paths:
 #     start_time = get_time_correction(csv_path, thresh=0.05, plot=True)
 #     print(f"Start time for {os.path.basename(csv_path)}: {start_time:.2f} hours")
+
+def plot_adjusted_flux(corrected_times, scaled_concs, flux_fn):
+    t_fit = np.linspace(corrected_times.min(), corrected_times.max(), 1000)
+    # Evaluate flux_fn at each t
+    bounds = [flux_fn(t) for t in t_fit]
+
+    # Unpack into lower and upper bound arrays
+    lower_bounds, upper_bounds = zip(*bounds)
+    lower_bounds = np.array(lower_bounds)
+    upper_bounds = np.array(upper_bounds)
+    # lb and lb are mean +/- margin
+    means = (lower_bounds + upper_bounds) / 2
+
+    plt.figure(figsize=(8, 5))
+
+    # Flux CI bounds
+    plt.fill_between(t_fit, lower_bounds, upper_bounds, color='red', alpha=0.3, label='Flux ± 0.95CI')
+
+    # Mean Flux
+    plt.plot(t_fit, means, label='Mean Flux', color='red')
+
+    # Experimental data
+    plt.scatter(corrected_times, scaled_concs, label="Experimental Concentrations", s=16, color='black')
+
+    # Also plot the finite difference estimates at each point
+    t = corrected_times.to_numpy()
+    c = scaled_concs.to_numpy()
+    dt = np.diff(t)
+    dc = np.diff(c)
+    # Centered finite differences (size N-2), could be padded later
+    finite_deriv = np.empty_like(c)
+    finite_deriv[1:-1] = (c[2:] - c[:-2]) / (t[2:] - t[:-2])
+    # Forward/backward for edges
+    finite_deriv[0] = (c[1] - c[0]) / (t[1] - t[0])
+    finite_deriv[-1] = (c[-1] - c[-2]) / (t[-1] - t[-2])
+    plt.plot(corrected_times, finite_deriv, 'o', label='Finite Difference dC/dt', markersize=4, color='blue')
+
+    plt.xlabel('Time (hrs)')
+    plt.ylabel(f"{target_col} (mMol)")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 # Create a function f(t) which returns a lower and upper bound for the flux at time t.
 # This version calculates bounds based on a mean and std obtained directly from the
@@ -112,16 +147,12 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
             full_derivs = spline_derivative(full_t)
             global_std = np.std(full_derivs, ddof=1)  # Use ddof=1 for sample std
 
-            mean_flux = spline_derivative(t)
-            # lower = mean_flux - z * global_std
-            # upper = mean_flux + z * global_std
-
             # Flip the sign of the flux?
-            mean_flux = -mean_flux
+            flux_est = -flux_est
             margin = max(z * global_std, min_flux_ci)
-            lower = mean_flux - margin
-            upper = mean_flux + margin
-            return mean_flux, lower, upper
+            lower = flux_est - margin
+            upper = flux_est + margin
+            return lower, upper
 
         dt = np.diff(local_times)
         dc = np.diff(local_concs)
@@ -142,13 +173,6 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
         std = weighted_std(residuals, weights)
         # std = np.std(residuals, ddof=1) if len(residuals) > 1 else 0.0
 
-        # margin = max(z * std, 1.0)
-        # margin = z * std
-        # margin = z * std # scale factor for wider bounds
-        # lower = flux_est - margin
-        # upper = max(flux_est + margin, 0)
-        # upper = flux_est + margin
-
         # NOTE: Flip the sign of the flux?
         flux_est = -flux_est
         margin = max(z * std, min_flux_ci)
@@ -157,59 +181,19 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
 
         print(f"[t={t:.2f}]: std={std:.4f}, flux={flux_est:.4f}, lb={lower:.4f}, ub={upper:.4f}")
 
-        return (flux_est, lower, upper)
-
-    def flux_fn_wrap(t):
-        """
-        Returns only the lower and upper bounds for the flux at time t.
-        """
-        mean, lower, upper = flux_fn(t)
         return (lower, upper)
 
     # Optional plotting
     if plot:
-        t_fit = np.linspace(corrected_times.min(), corrected_times.max(), 1000)
-        # Evaluate flux_fn at each t
-        bounds = [flux_fn(t) for t in t_fit]
+        plot_adjusted_flux(corrected_times, scaled_concs, flux_fn)
 
-        # Unpack into lower and upper bound arrays
-        means, lower_bounds, upper_bounds = zip(*bounds)
-        means = np.array(means)
-        lower_bounds = np.array(lower_bounds)
-        upper_bounds = np.array(upper_bounds)
+    return flux_fn
 
-        plt.figure(figsize=(8, 5))
-
-        # Flux CI bounds
-        plt.fill_between(t_fit, lower_bounds, upper_bounds, color='red', alpha=0.3, label='Flux ± 0.95CI')
-
-        # Mean Flux
-        plt.plot(t_fit, means, label='Mean Flux', color='red')
-
-        # Experimental data
-        plt.scatter(corrected_times, scaled_concs, label="Experimental Concentrations", s=16, color='black')
-
-        # Also plot the finite difference estimates at each point
-        t = corrected_times.to_numpy()
-        c = scaled_concs.to_numpy()
-        dt = np.diff(t)
-        dc = np.diff(c)
-        # Centered finite differences (size N-2), could be padded later
-        finite_deriv = np.empty_like(c)
-        finite_deriv[1:-1] = (c[2:] - c[:-2]) / (t[2:] - t[:-2])
-        # Forward/backward for edges
-        finite_deriv[0] = (c[1] - c[0]) / (t[1] - t[0])
-        finite_deriv[-1] = (c[-1] - c[-2]) / (t[-1] - t[-2])
-        plt.plot(corrected_times, finite_deriv, 'o', label='Finite Difference dC/dt', markersize=4, color='blue')
-        
-        plt.xlabel('Time')
-        plt.ylabel(f"{target_col} (scaled to {initial_concentration} mMol)")
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-    return flux_fn_wrap
-
+# 1. Load model
+objective = "ATP_sink"
+modelfile = "/data/local/jy1008/MA-host-microbiome/nmr-cdiff/data/icdf843.json"
+model = cb.io.load_json_model(modelfile)
+model.objective = objective
 
 # for csv_path in pro_csv_paths:
 # csv_path = pro_csv_paths[0]
@@ -223,24 +207,23 @@ for csv_path in pro_csv_paths:
 target_col = "Proline 4.2469"
 initial_concentration = 15.0  # mMol
 pro_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
-                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
-
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 target_col = "Glucose 5.2254"
 initial_concentration = 27.77777778  # mMol
 glc_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
-                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 target_col = "Valine 1.0253"
 initial_concentration = 2.564102564  # mMol
 val_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
-                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 target_col = "Leucine 0.9493"
 initial_concentration = 7.633587786  # mMol
-leu_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
-                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
+leu_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=0.5,
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 target_col = "Isoluecine 0.9258"
 initial_concentration = 2.290076336  # mMol
-ile_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
-                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
+ile_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=0.5,
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 
 
 t = np.linspace(0, 48, 100)
@@ -270,12 +253,12 @@ def dummy_glucose_constraint(t):
 
 constraints = {
     # "Ex_proL": MetaboliteConstraint("Ex_proL", dummy_proline_constraint)# ,
-    # "Ex_proL": MetaboliteConstraint("Ex_proL", pro_flux_fn),
-    "Ex_glc": MetaboliteConstraint("Ex_glc", glc_flux_fn)# 
+    "Ex_proL": MetaboliteConstraint("Ex_proL", pro_flux_fn),
+    "Ex_glc": MetaboliteConstraint("Ex_glc", glc_flux_fn),
     # "Ex_glc": MetaboliteConstraint("Ex_glc", dummy_glucose_constraint)
-    # "Ex_valL": MetaboliteConstraint("Ex_valL", val_flux_fn),
-    # "Ex_leuL": MetaboliteConstraint("Ex_leuL", leu_flux_fn),
-    # "Ex_ileL": MetaboliteConstraint("Ex_ileL", ile_flux_fn)
+    "Ex_valL": MetaboliteConstraint("Ex_valL", val_flux_fn),
+    "Ex_leuL": MetaboliteConstraint("Ex_leuL", leu_flux_fn),
+    "Ex_ileL": MetaboliteConstraint("Ex_ileL", ile_flux_fn)
 }
 
 # 3. Run dFBA

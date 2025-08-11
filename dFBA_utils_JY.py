@@ -60,19 +60,10 @@ def gaussian_weights(t_points, t0, sigma):
     return np.exp(-0.5 * ((t_points - t0) / sigma) ** 2)
 
 # Compute weighted std
-def weighted_std(values, weights, ddof=0):
-    weights = np.array(weights)
-    values = np.array(values)
+def weighted_std(values, weights):
     average = np.average(values, weights=weights)
-
-    # Weighted variance numerator and denominator
-    variance_numerator = np.sum(weights * (values - average)**2)
-    variance_denominator = np.sum(weights) - ddof
-
-    if variance_denominator <= 0:
-        return np.nan  # or 0.0, depending on your preference
-
-    return np.sqrt(variance_numerator / variance_denominator)
+    variance = np.average((values - average)**2, weights=weights)
+    return np.sqrt(variance)
 
 def simulate_proline(seed=None):
     """

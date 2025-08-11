@@ -56,10 +56,10 @@ class dFBA:
         This modifies the model's exchange bounds directly.
         """
         for met_id, constraint in self.constraints.items():
-            print(f"[t={t:.2f}] Applying constraint for {met_id}")
+            # print(f"[t={t:.2f}] Applying constraint for {met_id}")
             lb, ub = constraint.get_bounds(t)
 
-            print(f"[DEBUG] At time {t:.2f}, constraint returned: lb={lb}, ub={ub}")
+            # print(f"[DEBUG] At time {t:.2f}, constraint returned: lb={lb}, ub={ub}")
 
             # exch_rxn_id = f"Ex_{met_id}"  # Assumes BiGG-style naming
             exch_rxn_id = f"{met_id}"  # Assumes BiGG-style naming

@@ -25,11 +25,6 @@ model = cb.io.load_json_model(modelfile)
 model.objective = objective
 
 
-pro_csv_paths = [
-    "concentration_estimation/Data1_13CPro1_areas.csv",
-    "concentration_estimation/Data2_13CPro2_areas.csv",
-    "concentration_estimation/Data3_13CPro3_areas.csv"
-]
 
 def get_time_correction(csv_path, isocaproate_col="Isocaproate 0.8479", smooth_sigma=1.0, thresh=0.05, plot=False):
     """
@@ -94,6 +89,7 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
     ci = 0.95  # Confidence interval
     z = norm.ppf((1 + ci) / 2)
 
+    min_flux_ci = 0.001
     def flux_fn(t):
         """
         Returns a lower and upper bound for the flux at time t.
@@ -105,17 +101,26 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
         # NOTE: want position-based indexing in numpy, not label-based in pandas
         local_times = corrected_times[mask].to_numpy()
         local_concs = scaled_concs[mask].to_numpy()
+        print(local_times)
+        print(local_concs)
 
         # Require at least 2 points to compute finite differences
         if len(local_times) < 2:
+            print("[Warning] Not enough points to compute flux bounds, using global std.")
             # Fallback: global std of spline derivative
             full_t = np.linspace(corrected_times.min(), corrected_times.max(), 1000)
             full_derivs = spline_derivative(full_t)
             global_std = np.std(full_derivs, ddof=1)  # Use ddof=1 for sample std
 
             mean_flux = spline_derivative(t)
-            lower = mean_flux - z * global_std
-            upper = mean_flux + z * global_std
+            # lower = mean_flux - z * global_std
+            # upper = mean_flux + z * global_std
+
+            # Flip the sign of the flux?
+            mean_flux = -mean_flux
+            margin = max(z * global_std, min_flux_ci)
+            lower = mean_flux - margin
+            upper = mean_flux + margin
             return mean_flux, lower, upper
 
         dt = np.diff(local_times)
@@ -136,8 +141,21 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
         # ddof=1 is only used for sample counts, and not for weights
         std = weighted_std(residuals, weights)
         # std = np.std(residuals, ddof=1) if len(residuals) > 1 else 0.0
-        lower = flux_est - z * std
-        upper = flux_est + z * std
+
+        # margin = max(z * std, 1.0)
+        # margin = z * std
+        # margin = z * std # scale factor for wider bounds
+        # lower = flux_est - margin
+        # upper = max(flux_est + margin, 0)
+        # upper = flux_est + margin
+
+        # NOTE: Flip the sign of the flux?
+        flux_est = -flux_est
+        margin = max(z * std, min_flux_ci)
+        lower = flux_est - margin
+        upper = flux_est + margin
+
+        print(f"[t={t:.2f}]: std={std:.4f}, flux={flux_est:.4f}, lb={lower:.4f}, ub={upper:.4f}")
 
         return (flux_est, lower, upper)
 
@@ -195,90 +213,69 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
 
 # for csv_path in pro_csv_paths:
 # csv_path = pro_csv_paths[0]
+pro_csv_paths = [
+    "concentration_estimation/Data1_13CPro1_areas.csv",
+    "concentration_estimation/Data2_13CPro2_areas.csv",
+    "concentration_estimation/Data3_13CPro3_areas.csv"
+]
+for csv_path in pro_csv_paths:
+
 target_col = "Proline 4.2469"
 initial_concentration = 15.0  # mMol
-pro_flux_fn = flux_function_with_bounds(target_col, pro_csv_paths[0], initial_concentration, smoothing_factor=4.0, 
-                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
-pro_flux_fn = flux_function_with_bounds(target_col, pro_csv_paths[1], initial_concentration, smoothing_factor=4.0,
-                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
-pro_flux_fn = flux_function_with_bounds(target_col, pro_csv_paths[2], initial_concentration, smoothing_factor=4.0,
-                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
+pro_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
 
-# need to define timecourse somewhere
-timecourse = np.linspace(0, 48, 100)
+target_col = "Glucose 5.2254"
+initial_concentration = 27.77777778  # mMol
+glc_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
+target_col = "Valine 1.0253"
+initial_concentration = 2.564102564  # mMol
+val_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
+target_col = "Leucine 0.9493"
+initial_concentration = 7.633587786  # mMol
+leu_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
+target_col = "Isoluecine 0.9258"
+initial_concentration = 2.290076336  # mMol
+ile_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
+                                        flux_bounds_window=5, flux_bounds_sigma=1, plot=False)
+
+
+t = np.linspace(0, 48, 100)
+glc_flux_bounds = [glc_flux_fn(ti) for ti in t]
+glc_flux_bounds = np.array(glc_flux_bounds)
+plt.plot(t, glc_flux_bounds)
+plt.show()
+
+# print(sim.model.reactions.get_by_id("Ex_proL").lower_bound)
+# print(sim.model.reactions.get_by_id("Ex_proL").upper_bound)
 
 
 
-pro_lb, pro_ub, pro_constraint_fn = fit_logistic_with_bounds(
-    target_col="Proline 4.2469",
-    csv_paths=[
-        "concentration_estimation/Data1_13CPro1_areas.csv",
-        "concentration_estimation/Data2_13CPro2_areas.csv",
-        "concentration_estimation/Data3_13CPro3_areas.csv"
-    ],
-    initial_concentration=15.0,
-    constraint_func=make_logistic_flux_fn_bounded,
-    plot=False
-)
+# Ask about sign issue: 
+# Ex_proL bounds of [-1000, 0] don't work, but [0, 1000] does.
+# Is it from the perspective of the medium vs cells?
+# A bound of [0, 1.2] works, but [0, 1.1] doesn't.
+def dummy_proline_constraint(t):
+    lb = 0
+    ub = 1.1
+    return (lb, ub)
 
-glc_lb, glc_ub, glc_constraint_fn = fit_logistic_with_bounds(
-    target_col="Glucose 5.2254",
-    csv_paths=[
-        "concentration_estimation/Data1_13CPro1_areas.csv",
-        "concentration_estimation/Data2_13CPro2_areas.csv",
-        "concentration_estimation/Data3_13CPro3_areas.csv"
-    ],
-    initial_concentration=27.77777778,
-    constraint_func=make_logistic_flux_fn_bounded,
-    plot=False
-)
-
-val_lb, val_ub, val_constraint_fn = fit_logistic_with_bounds(
-    target_col="Valine 1.0253",
-    csv_paths=[
-        "concentration_estimation/Data1_13CPro1_areas.csv",
-        "concentration_estimation/Data2_13CPro2_areas.csv",
-        "concentration_estimation/Data3_13CPro3_areas.csv"
-    ],
-    initial_concentration=2.564102564,
-    constraint_func=make_logistic_flux_fn_bounded,
-    plot=False
-)
-
-leu_lb, leu_ub, leu_constraint_fn = fit_logistic_with_bounds(
-    target_col="Leucine 0.9493",
-    csv_paths=[
-        "concentration_estimation/Data1_13CPro1_areas.csv",
-        "concentration_estimation/Data2_13CPro2_areas.csv",
-        "concentration_estimation/Data3_13CPro3_areas.csv"
-    ],
-    initial_concentration=7.633587786,
-    constraint_func=make_logistic_flux_fn_bounded,
-    plot=False
-)
-
-ile_lb, ile_ub, ile_constraint_fn = fit_logistic_with_bounds(
-    target_col="Isoluecine 0.9258",
-    csv_paths=[
-        "concentration_estimation/Data1_13CPro1_areas.csv",
-        "concentration_estimation/Data2_13CPro2_areas.csv",
-        "concentration_estimation/Data3_13CPro3_areas.csv"
-    ],
-    initial_concentration=2.290076336,
-    constraint_func=make_logistic_flux_fn_bounded,
-    plot=False
-)
+def dummy_glucose_constraint(t):
+    lb = 0
+    ub = 2
+    return(lb, ub)
 
 constraints = {
-    # "Ex_glc": MetaboliteConstraint("Ex_glc", glucose_constraint)
-    # "Ex_proL": MetaboliteConstraint("Ex_proL", proline_constraint)
-    # "Ex_proL": MetaboliteConstraint("Ex_proL", proL_constraint_func),
-    # "Ex_glc": MetaboliteConstraint("Ex_glc", glu_constraint_func)
-    "Ex_proL": MetaboliteConstraint("Ex_proL", pro_constraint_fn),
-    "Ex_glc": MetaboliteConstraint("Ex_glc", glc_constraint_fn),
-    "Ex_valL": MetaboliteConstraint("Ex_valL", val_constraint_fn),
-    "Ex_leuL": MetaboliteConstraint("Ex_leuL", leu_constraint_fn),
-    "Ex_ileL": MetaboliteConstraint("Ex_ileL", ile_constraint_fn)
+    # "Ex_proL": MetaboliteConstraint("Ex_proL", dummy_proline_constraint)# ,
+    # "Ex_proL": MetaboliteConstraint("Ex_proL", pro_flux_fn),
+    "Ex_glc": MetaboliteConstraint("Ex_glc", glc_flux_fn)# 
+    # "Ex_glc": MetaboliteConstraint("Ex_glc", dummy_glucose_constraint)
+    # "Ex_valL": MetaboliteConstraint("Ex_valL", val_flux_fn),
+    # "Ex_leuL": MetaboliteConstraint("Ex_leuL", leu_flux_fn),
+    # "Ex_ileL": MetaboliteConstraint("Ex_ileL", ile_flux_fn)
 }
 
 # 3. Run dFBA
@@ -289,19 +286,18 @@ sim = dFBA(
     objective=objective,
     constraints=constraints,
     time_range=(0, 48),
-    steps_per_hour=5,
+    steps_per_hour=2,
     # tracked_reactions=["ATP_sink", "ID_314", "ID_135"],
     # tracked_reactions=["ATP_sink", "ID_314", "ID_135", 
     #                    "Trans_glc", "Ex_proL", "Ex_leuL", 
     #                    "Ex_valL", "Ex_ileL", "Ex_thrL", "Sec_ac", 
     #                    "Ex_alaL", "Ex_cysL", "Sec_ppa", "Sec_2abut", "ID_326"],
     tracked_reactions=["ATP_sink", "ID_251", "ID_252", "ID_512", "ID_474", "ID_49",
-                       "ID_280", "ID_321", "ID_146", "ID_366", "ID_1021311", "ID_1021312",
-                       "ID_1021313", "PPAKr", "ATPsynth4_1", "BUK", "IACK", "ImzACK", "HPhACK"],
+                    "ID_280", "ID_321", "ID_146", "ID_366", "ID_1021311", "ID_1021312",
+                    "ID_1021313", "PPAKr", "ATPsynth4_1", "BUK", "IACK", "ImzACK", "HPhACK",
+                    "Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"],
     fva=True
 )
-# Trans_glc: Phosphotransferase system (PTS), which imports glucose and phosphorylates it using PEP. ✅ Critical step in anaerobes like C. difficile.
-# ID_657: Alternative to PTS—ATP-dependent phosphorylation of cytoplasmic glucose. Possibly used when PTS isn't.
 
 sim.run()
 sim.export_results()
@@ -334,7 +330,8 @@ df = df.join(fva_df)
 #              "ID_280", "ID_321", "ID_146", "ID_366", "ID_1021311", "ID_1021312",
 #              "ID_1021313", "PPAKr", "ATPsynth4_1", "BUK", "IACK", "ImzACK", "HPhACK"]
 plt.rc('axes', prop_cycle=cycler('color', plt.cm.tab20.colors))
-reactions = ["ATP_sink", "ID_252", "ID_280", "ID_321", "ID_146", "ID_366", "ATPsynth4_1", "ImzACK"]
+reactions = ["ATP_sink", "ID_252", "ID_280", "ID_321", "ID_146", "ID_366", "ATPsynth4_1", "ImzACK",
+             "Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"]
 df_conc = plot_integrated_fluxes(df, reactions, initial_conc=0)
 plot_raw_fluxes(df, reactions)
 

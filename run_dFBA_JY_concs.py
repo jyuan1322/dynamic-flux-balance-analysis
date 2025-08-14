@@ -1,4 +1,4 @@
-import os
+import os, pickle
 import cobra as cb
 import networkx as nx
 import numpy as np
@@ -53,11 +53,8 @@ def get_time_correction(csv_path, isocaproate_col="Isocaproate 0.8479", smooth_s
         plt.tight_layout()
         plt.show()
     return start_time
-# for csv_path in pro_csv_paths:
-#     start_time = get_time_correction(csv_path, thresh=0.05, plot=True)
-#     print(f"Start time for {os.path.basename(csv_path)}: {start_time:.2f} hours")
 
-def plot_adjusted_flux(corrected_times, scaled_concs, flux_fn):
+def plot_adjusted_flux(corrected_times, scaled_concs, flux_fn, conc_spline, exp_name="", target_col=""):
     t_fit = np.linspace(corrected_times.min(), corrected_times.max(), 1000)
     # Evaluate flux_fn at each t
     bounds = [flux_fn(t) for t in t_fit]
@@ -69,16 +66,19 @@ def plot_adjusted_flux(corrected_times, scaled_concs, flux_fn):
     # lb and lb are mean +/- margin
     means = (lower_bounds + upper_bounds) / 2
 
-    plt.figure(figsize=(8, 5))
-
-    # Flux CI bounds
-    plt.fill_between(t_fit, lower_bounds, upper_bounds, color='red', alpha=0.3, label='Flux ± 0.95CI')
-
-    # Mean Flux
-    plt.plot(t_fit, means, label='Mean Flux', color='red')
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
 
     # Experimental data
-    plt.scatter(corrected_times, scaled_concs, label="Experimental Concentrations", s=16, color='black')
+    ax1.scatter(corrected_times, scaled_concs, label="Experimental Concentrations", s=16, color='black')
+    ax1.plot(t_fit, conc_spline(t_fit), label='Smoothed Spline', color='blue')
+    ax1.set_ylabel(f'Conc {exp_name} {target_col} (mMol)')
+    ax1.legend(loc='upper right')
+
+    # Flux CI bounds
+    ax2.fill_between(t_fit, lower_bounds, upper_bounds, color='red', alpha=0.3, label='Flux ± 0.95CI')
+
+    # Mean Flux
+    ax2.plot(t_fit, means, label='Mean Flux', color='red')
 
     # Also plot the finite difference estimates at each point
     t = corrected_times.to_numpy()
@@ -91,13 +91,65 @@ def plot_adjusted_flux(corrected_times, scaled_concs, flux_fn):
     # Forward/backward for edges
     finite_deriv[0] = (c[1] - c[0]) / (t[1] - t[0])
     finite_deriv[-1] = (c[-1] - c[-2]) / (t[-1] - t[-2])
-    plt.plot(corrected_times, finite_deriv, 'o', label='Finite Difference dC/dt', markersize=4, color='blue')
+    # Flip the sign of the finite derivative to match flux direction
+    finite_deriv = -finite_deriv
+    ax2.plot(corrected_times, finite_deriv, 'o', label='Finite Difference dC/dt', markersize=4, color='blue')
 
-    plt.xlabel('Time (hrs)')
-    plt.ylabel(f"{target_col} (mMol)")
-    plt.legend()
+    ax2.set_xlabel('Time (hrs)')
+    ax2.set_ylabel(f'Flux {exp_name} {target_col} (mMol/hr)')
+    ax2.legend(loc='upper right')
+
+    # save experiment info for later plotting
+    exp_flux_specs = {
+        "corrected_times": corrected_times,
+        "scaled_concs": scaled_concs,
+        "conc_spline": conc_spline,
+        "target_col": target_col,
+        "exp_name": exp_name,
+        "t_fit": t_fit,
+        "lower_bounds": lower_bounds,
+        "upper_bounds": upper_bounds,
+        "means": means,
+        "finite_deriv": finite_deriv
+    }
+    pickle.dump(exp_flux_specs, open(f"{exp_name}_{target_col.replace(' ', '_')}_flux_specs.pkl", "wb"))
+
     plt.tight_layout()
     plt.show()
+
+# plot multiple experiments together to test the time shift
+def plot_adjusted_fluxes_multiple(pkl_files):
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    for pkl_file in pkl_files:
+        specs = pickle.load(open(pkl_file, "rb"))
+        exp_name = specs["exp_name"]
+        target_col = specs["target_col"]
+        corrected_times = specs["corrected_times"]
+        scaled_concs = specs["scaled_concs"]
+        conc_spline = specs["conc_spline"]
+        t_fit = specs["t_fit"]
+        lower_bounds = specs["lower_bounds"]
+        upper_bounds = specs["upper_bounds"]
+        means = specs["means"]
+        finite_deriv = specs["finite_deriv"]
+        conc_spline_derivative = conc_spline.derivative()
+
+        ax1.plot(corrected_times, conc_spline(corrected_times), label=f'{exp_name} {target_col}')
+        ax1.set_ylabel(f'Conc {exp_name} {target_col} (mMol)')
+        ax1.legend(loc='upper right')
+        ax2.plot(t_fit, means, label=f"{exp_name} {target_col}")
+        ax2.set_xlabel('Time (hrs)')
+        ax2.set_ylabel(f'Flux {exp_name} {target_col} (mMol/hr)')
+        ax2.legend(loc='upper right')
+    plt.tight_layout()
+    plt.show()
+out_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/concentration_estimation/results_V2"
+for metabolite in ["Proline", "Glucose", "Valine", "Leucine", "Isoluecine"]:
+    # Find all files that contain the metabolite name
+    files = [os.path.join(out_dir, f) for f in os.listdir(out_dir) if metabolite in f]
+    files = sorted(files)
+    plot_adjusted_fluxes_multiple(files)
+
 
 # Create a function f(t) which returns a lower and upper bound for the flux at time t.
 # This version calculates bounds based on a mean and std obtained directly from the
@@ -106,7 +158,7 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
                               flux_bounds_window = 5, flux_bounds_sigma = 1, plot=False):
     df = pd.read_csv(csv_path)
     # Correct for time offset
-    start_time = get_time_correction(csv_path, thresh=0.05, plot=plot)
+    start_time = get_time_correction(csv_path, thresh=0.05, plot=False)
     corrected_times = df['Time'] - start_time
 
     # Scale the concentrations to mMol using the recorded initial concentration
@@ -121,8 +173,9 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
     spline = UnivariateSpline(corrected_times, scaled_concs, s=smoothing_factor)
     spline_derivative = spline.derivative()
     # To estimate the CI of the flux, calculate point-wise derivatives in a window around t
-    ci = 0.95  # Confidence interval
-    z = norm.ppf((1 + ci) / 2)
+    # ci = 0.95  # Confidence interval
+    # z = norm.ppf((1 + ci) / 2)
+    z = 1.0 # just use 1 std for now
 
     min_flux_ci = 0.001
     def flux_fn(t):
@@ -185,7 +238,9 @@ def flux_function_with_bounds(target_col, csv_path, initial_concentration, smoot
 
     # Optional plotting
     if plot:
-        plot_adjusted_flux(corrected_times, scaled_concs, flux_fn)
+        exp_name = os.path.basename(csv_path).removesuffix("_areas.csv")
+        plot_adjusted_flux(corrected_times, scaled_concs, flux_fn, spline,
+                           exp_name = exp_name, target_col = target_col)
 
     return flux_fn
 
@@ -202,6 +257,12 @@ pro_csv_paths = [
     "concentration_estimation/Data2_13CPro2_areas.csv",
     "concentration_estimation/Data3_13CPro3_areas.csv"
 ]
+
+# Start time calculation using isocaproate
+for csv_path in pro_csv_paths:
+    start_time = get_time_correction(csv_path, thresh=0.05, plot=True)
+    print(f"Start time for {os.path.basename(csv_path)}: {start_time:.2f} hours")
+
 for csv_path in pro_csv_paths:
 
 target_col = "Proline 4.2469"
@@ -210,52 +271,28 @@ pro_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentrat
                                         flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 target_col = "Glucose 5.2254"
 initial_concentration = 27.77777778  # mMol
+# 4.0 for Pro1, 16.0 for Pro2, 4.0 for Pro3
 glc_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
                                         flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 target_col = "Valine 1.0253"
 initial_concentration = 2.564102564  # mMol
-val_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=4.0, 
+# 4.0 for Pro1, 0.1 for Pro2, 0.1 for Pro3
+val_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=0.1, 
                                         flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 target_col = "Leucine 0.9493"
 initial_concentration = 7.633587786  # mMol
-leu_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=0.5,
+leu_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=0.2,
                                         flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
+# 0.2 for Pro1, 1.0 for Pro2, 0.05 for Pro3
 target_col = "Isoluecine 0.9258"
 initial_concentration = 2.290076336  # mMol
-ile_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=0.5,
+ile_flux_fn = flux_function_with_bounds(target_col, csv_path, initial_concentration, smoothing_factor=0.05,
                                         flux_bounds_window=5, flux_bounds_sigma=1, plot=True)
 
 
-t = np.linspace(0, 48, 100)
-glc_flux_bounds = [glc_flux_fn(ti) for ti in t]
-glc_flux_bounds = np.array(glc_flux_bounds)
-plt.plot(t, glc_flux_bounds)
-plt.show()
-
-# print(sim.model.reactions.get_by_id("Ex_proL").lower_bound)
-# print(sim.model.reactions.get_by_id("Ex_proL").upper_bound)
-
-
-
-# Ask about sign issue: 
-# Ex_proL bounds of [-1000, 0] don't work, but [0, 1000] does.
-# Is it from the perspective of the medium vs cells?
-# A bound of [0, 1.2] works, but [0, 1.1] doesn't.
-def dummy_proline_constraint(t):
-    lb = 0
-    ub = 1.1
-    return (lb, ub)
-
-def dummy_glucose_constraint(t):
-    lb = 0
-    ub = 2
-    return(lb, ub)
-
 constraints = {
-    # "Ex_proL": MetaboliteConstraint("Ex_proL", dummy_proline_constraint)# ,
     "Ex_proL": MetaboliteConstraint("Ex_proL", pro_flux_fn),
     "Ex_glc": MetaboliteConstraint("Ex_glc", glc_flux_fn),
-    # "Ex_glc": MetaboliteConstraint("Ex_glc", dummy_glucose_constraint)
     "Ex_valL": MetaboliteConstraint("Ex_valL", val_flux_fn),
     "Ex_leuL": MetaboliteConstraint("Ex_leuL", leu_flux_fn),
     "Ex_ileL": MetaboliteConstraint("Ex_ileL", ile_flux_fn)
@@ -264,12 +301,18 @@ constraints = {
 # 3. Run dFBA
 # ID_135: proL_c --> proD_c (proline racemase)
 # ID_314: proline --> 5-aminovalerate
+
+# Pro1 time_range = (0, 48), steps_per_hour=5
+# Pro2 time_range = (-7, 33), steps_per_hour=5
+# Pro3 time_range = (-11, 30), steps_per_hour=5
 sim = dFBA(
     model=model,
     objective=objective,
     constraints=constraints,
-    time_range=(0, 48),
-    steps_per_hour=2,
+    # time_range=(0, 48),
+    # time_range=(-7, 33),
+    time_range=(-11, 30),
+    steps_per_hour=5,
     # tracked_reactions=["ATP_sink", "ID_314", "ID_135"],
     # tracked_reactions=["ATP_sink", "ID_314", "ID_135", 
     #                    "Trans_glc", "Ex_proL", "Ex_leuL", 
@@ -381,8 +424,8 @@ def plot_raw_fluxes_html(flux_df, reactions, outname="raw_fluxes.html"):
     fig.write_html(outname)
     fig.show()
 
-plot_raw_fluxes_html(flux_df, interesting_reactions, outname="interesting_fluxes_all.html")
-plot_raw_fluxes_html(flux_df, bounding_reactions, outname="interesting_fluxes_v2_bounding.html")
-plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, outname="interesting_fluxes_v2_gt2.html")
-plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, outname="interesting_fluxes_v2_lt2.html")
+plot_raw_fluxes_html(flux_df, interesting_reactions, outname="interesting_fluxes_all_pro1.html")
+plot_raw_fluxes_html(flux_df, bounding_reactions, outname="interesting_fluxes_v2_bounding_pro1.html")
+plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, outname="interesting_fluxes_v2_gt2_pro1.html")
+plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, outname="interesting_fluxes_v2_lt2_pro1.html")
 

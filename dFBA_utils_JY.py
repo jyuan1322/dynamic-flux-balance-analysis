@@ -188,18 +188,18 @@ def plot_integrated_fluxes(df, reactions, initial_conc=0):
 
 
 
-def plot_raw_fluxes(df, reactions):
+def plot_raw_fluxes(df, reactions, outname="dfba_flux", model=None, plot_bounds=False):
     """
-    Plot just the fluxes (TODO: combine this with the previous function)
+    Plot fluxes with optional min/max shading.
     
     Parameters:
     - df: pandas DataFrame with time as index and flux columns
-    - reactions: list of reaction IDs (column names) to integrate and plot
+    - reactions: list of reaction IDs (column names) to plot
     """
     df = df.sort_index()  # Ensure sorted by time
     time = df.index.values
     
-    plt.figure(figsize=(8,6))
+    plt.figure(figsize=(12, 6))
     
     for rxn in reactions:
         if rxn not in df.columns:
@@ -207,23 +207,31 @@ def plot_raw_fluxes(df, reactions):
             continue
         
         flux = df[rxn].values
-        # concentration = integrate.cumulative_trapezoid(flux, time, initial=0) + initial_conc
+        rxn_name = ""
+        if model is not None:
+            rxn_obj = model.reactions.get_by_id(rxn)
+            rxn_name = rxn_obj.name
+        line, = plt.plot(time, flux, label=f"{rxn_name} ({rxn})")  # line handle to get color
         
-        print(rxn)
-        print(flux)
-
-        # Add new column for integrated concentration
-        # conc_col = f"{rxn}_conc"
-        # df[conc_col] = concentration
+        # Check if min/max columns exist
+        min_col = f"{rxn}_min"
+        max_col = f"{rxn}_max"
         
-        # plt.plot(time, concentration, label=f"{rxn} concentration")
-        plt.plot(time, flux, label=f"{rxn} flux")
+        if plot_bounds and min_col in df.columns and max_col in df.columns:
+            plt.fill_between(
+                time,
+                df[min_col].values,
+                df[max_col].values,
+                color=line.get_color(),   # match line color
+                alpha=0.3
+            )
     
     plt.xlabel("Time")
     plt.ylabel("Flux")
     plt.title("Raw fluxes")
-    plt.legend()
+    plt.legend(loc="center left", bbox_to_anchor=(1, 0.75))
     plt.grid(True)
-    plt.show()
-    
-    return df  # optionally return the updated DataFrame with new concentration columns
+    plt.tight_layout()
+    plt.subplots_adjust(right=0.5)
+    # plt.show()
+    plt.savefig(f"{outname}.pdf", dpi=300, bbox_inches="tight")

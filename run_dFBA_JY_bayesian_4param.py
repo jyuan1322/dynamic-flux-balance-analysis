@@ -8,6 +8,7 @@ from scipy import integrate
 from scipy.stats import norm, spearmanr
 from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import gaussian_filter1d
+from scipy.special import expit
 import matplotlib.pyplot as plt
 from networkx.algorithms.traversal.depth_first_search import dfs_tree
 from networkx.drawing.nx_agraph import graphviz_layout
@@ -58,8 +59,8 @@ def get_time_correction(csv_path, isocaproate_col="Isocaproate 0.8479", smooth_s
 # Create a function f(t) which returns a lower and upper bound for the flux at time t.
 # This version calculates bounds based on a mean and std obtained directly from the
 # sample data.
-def logistic_inference(csv_path, target_col, initial_concentration, plot=False):
-
+def logistic_inference(csv_path, target_col, initial_concentration, exp_id):
+    
     df = pd.read_csv(csv_path)
     # Correct for time offset
     start_time = get_time_correction(csv_path, thresh=0.05, plot=False)
@@ -73,7 +74,14 @@ def logistic_inference(csv_path, target_col, initial_concentration, plot=False):
     if(scaled_concs.min() < 0):
         scaled_concs = scaled_concs - scaled_concs.min()
 
-    # scale the time points going in, and then rescale them coming out
+    # return form pickle if it exists
+    pickle_out = f"stan_logistic_samples_{exp_id}_{target_col.replace(' ', '_')}.pkl"
+    if os.path.exists(pickle_out):
+        with open(pickle_out, "rb") as f:   # "rb" = read, binary mode
+            logistic_df = pickle.load(f)
+        return logistic_df, corrected_times, scaled_concs
+
+    # For Stan, scale the time points going in, and then rescale them coming out
     x = corrected_times.values
     x_scale = x.max() - x.min()
     x = x / x_scale
@@ -150,55 +158,58 @@ model {
     logistic_df['C'] = logistic_df['C'] * x_scale
     logistic_df['D'] = logistic_df['D'] * x_scale
 
-    if plot:
-        # plot the original data and the posterior samples
-        fig, (ax1, ax2) = plt.subplots(
-            2, 1,          # 2 rows, 1 column
-            figsize=(10, 8),
-            sharex=True    # share x-axis
-        )
-
-        # Plot the posterior samples
-        y_preds = []
-        for i in range(logistic_df.shape[0]):
-            A = logistic_df['A'].iloc[i]
-            B = logistic_df['B'].iloc[i]
-            C = logistic_df['C'].iloc[i]
-            D = logistic_df['D'].iloc[i]
-            y_fit = A + (B-A) * (1 / (1 + np.exp(-(corrected_times - C) / D)))
-            y_preds.append(y_fit)
-            ax2.plot(corrected_times, y_fit, color='blue', alpha=0.01)
-
-        y_preds = np.array(y_preds)
-
-        # Compute mean and standard error
-        y_mean = np.mean(y_preds, axis=0)
-        y_std = np.std(y_preds, axis=0)
-        lower, upper = np.percentile(y_preds, [2.5, 97.5], axis=0)
-
-        # Plot mean and ±SE
-        ax1.plot(corrected_times, y_mean, color='red', linewidth=2, label='Mean')
-        ax1.plot(corrected_times, lower, color='blue', linewidth=1, label='± 95% CI')
-        ax1.plot(corrected_times, upper, color='blue', linewidth=1)
-        ax1.plot(corrected_times, y_mean - y_std, color='green', linewidth=1, label='± 1 std')
-        ax1.plot(corrected_times, y_mean + y_std, color='green', linewidth=1)
-
-        # Scatter original data
-        ax1.scatter(corrected_times, scaled_concs, label='Scaled Concentration Data', s=16, color='black')
-
-        ax2.set_xlabel('Time (hours)')
-        ax1.set_ylabel(f'Scaled Concentration {target_col} (mMol)')
-        ax2.set_ylabel(f'Scaled Concentration {target_col} (mMol)')
-        ax1.set_title(f'{target_col}')
-        ax2.set_title("Posterior Sample Logistic Curves")
-        ax1.legend()
-        plt.tight_layout()
-        plt.show()
+    with open(pickle_out, "wb") as f:  # "wb" = write binary
+        pickle.dump(logistic_df, f)
     
     # return the df of sampled logistic curves
-    return logistic_df
+    return logistic_df, corrected_times, scaled_concs
 
-from scipy.special import expit
+def plot_logistic_fit(logistic_df, corrected_times, scaled_concs):
+    # plot the original data and the posterior samples
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1,          # 2 rows, 1 column
+        figsize=(10, 8),
+        sharex=True    # share x-axis
+    )
+
+    # Plot the posterior samples
+    y_preds = []
+    for i in range(logistic_df.shape[0]):
+        A = logistic_df['A'].iloc[i]
+        B = logistic_df['B'].iloc[i]
+        C = logistic_df['C'].iloc[i]
+        D = logistic_df['D'].iloc[i]
+        y_fit = A + (B-A) * (1 / (1 + np.exp(-(corrected_times - C) / D)))
+        y_preds.append(y_fit)
+        ax2.plot(corrected_times, y_fit, color='blue', alpha=0.01)
+
+    y_preds = np.array(y_preds)
+
+    # Compute mean and standard error
+    y_mean = np.mean(y_preds, axis=0)
+    y_std = np.std(y_preds, axis=0)
+    lower, upper = np.percentile(y_preds, [2.5, 97.5], axis=0)
+
+    # Plot mean and ±SE
+    ax1.plot(corrected_times, y_mean, color='red', linewidth=2, label='Mean')
+    ax1.plot(corrected_times, lower, color='blue', linewidth=1, label='± 95% CI')
+    ax1.plot(corrected_times, upper, color='blue', linewidth=1)
+    ax1.plot(corrected_times, y_mean - y_std, color='green', linewidth=1, label='± 1 std')
+    ax1.plot(corrected_times, y_mean + y_std, color='green', linewidth=1)
+
+    # Scatter original data
+    ax1.scatter(corrected_times, scaled_concs, label='Scaled Concentration Data', s=16, color='black')
+
+    ax2.set_xlabel('Time (hours)')
+    ax1.set_ylabel(f'Scaled Concentration {target_col} (mMol)')
+    ax2.set_ylabel(f'Scaled Concentration {target_col} (mMol)')
+    ax1.set_title(f'{target_col}')
+    ax2.set_title("Posterior Sample Logistic Curves")
+    ax1.legend()
+    plt.tight_layout()
+    plt.show()
+
+
 def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95):
     """
     Returns a function `evaluate(t)` that evaluates all curves
@@ -248,31 +259,42 @@ time_ranges = {
     "13CPro3": (-11, 30)
 }
 for csv_path in pro_csv_paths:
+    plot_logistics = False
     exp_id = [p for p in csv_path.split('_') if 'Pro' in p][0]
 
     target_col = "Proline 4.2469"
     initial_concentration = 15.0  # mMol
-    lg_df = logistic_inference(csv_path, target_col, initial_concentration, plot=False)
+    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
+    if plot_logistics:
+        plot_logistic_fit(lg_df, corrected_times, scaled_concs)
     pro_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
 
     target_col = "Glucose 5.2254"
     initial_concentration = 27.77777778  # mMol
-    lg_df = logistic_inference(csv_path, target_col, initial_concentration, plot=False)
+    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
+    if plot_logistics:
+        plot_logistic_fit(lg_df, corrected_times, scaled_concs)
     glc_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
 
     target_col = "Valine 1.0253"
     initial_concentration = 2.564102564  # mMol
-    lg_df = logistic_inference(csv_path, target_col, initial_concentration, plot=False)
+    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
+    if plot_logistics:
+        plot_logistic_fit(lg_df, corrected_times, scaled_concs)
     val_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
 
     target_col = "Leucine 0.9493"
     initial_concentration = 7.633587786  # mMol
-    lg_df = logistic_inference(csv_path, target_col, initial_concentration, plot=False)
+    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
+    if plot_logistics:
+        plot_logistic_fit(lg_df, corrected_times, scaled_concs)
     leu_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
 
     target_col = "Isoluecine 0.9258"
     initial_concentration = 2.290076336  # mMol
-    lg_df = logistic_inference(csv_path, target_col, initial_concentration, plot=False)
+    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
+    if plot_logistics:
+        plot_logistic_fit(lg_df, corrected_times, scaled_concs)
     ile_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
 
     # 1. Load model
@@ -289,6 +311,7 @@ for csv_path in pro_csv_paths:
         "Ex_ileL": MetaboliteConstraint("Ex_ileL", ile_flux_fn)
     }
 
+    """
     tracked_reactions = [   
         "ATP_sink",
         "ID_575", "ID_53", "ID_326", 
@@ -298,6 +321,24 @@ for csv_path in pro_csv_paths:
         "Ex_hco3", "Ex_h2o",
         "RNF-Complex"
     ]
+    """
+    tracked_reactions = [
+        "ATP_sink",
+        "ATPsynth4_1",
+        "ID_233",
+        "ID_280",
+        "ID_252",
+        "ID_321",
+        "ID_146",
+        "ID_623",
+        "ID_366",
+        "ID_297"
+    ]
+    """
+    with open("ATP_sink_reactions_list.txt", "r") as f:
+        tracked_reactions = [line.strip() for line in f]
+    print(tracked_reactions)
+    """
 
     # 3. Run dFBA
     # ID_135: proL_c --> proD_c (proline racemase)

@@ -25,6 +25,30 @@ def print_rxns(model, metab, role="all"):
     return rxn_list
 
 
+def write_rxn_ids(model, metab, role="all", outfile=None):
+    rxn_list = []
+    # match string to metabolites
+    met_list = [met.id for met in model.metabolites if metab in met.id]
+    for met in met_list:
+        print(f"----- {met} -----")
+        temp = model.metabolites.get_by_id(met)
+        for rxn in temp.reactions:
+            if role == "reactant" and temp not in rxn.reactants:
+                continue
+            if role == "product" and temp not in rxn.products:
+                continue
+            print(rxn.id, rxn.reaction)
+            rxn_list.append(rxn.id)  # just store ID
+    
+    # if an output file is provided, write one ID per line
+    if outfile:
+        with open(outfile, "w") as f:
+            for rid in rxn_list:
+                f.write(rid + "\n")
+    
+    return rxn_list
+
+
 def generate_rxn_graph(model, metab, role="all"):
     G = nx.DiGraph()
 

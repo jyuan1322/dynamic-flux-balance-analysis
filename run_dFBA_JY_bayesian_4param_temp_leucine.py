@@ -59,11 +59,11 @@ def get_time_correction(csv_path, isocaproate_col="Isocaproate 0.8479", smooth_s
 # Create a function f(t) which returns a lower and upper bound for the flux at time t.
 # This version calculates bounds based on a mean and std obtained directly from the
 # sample data.
-def logistic_inference(csv_path, target_col, initial_concentration, exp_id):
+def logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="Isocaproate 0.8479"):
     
     df = pd.read_csv(csv_path)
     # Correct for time offset
-    start_time = get_time_correction(csv_path, thresh=0.05, plot=False)
+    start_time = get_time_correction(csv_path, isocaproate_col, thresh=0.05, plot=False)
     corrected_times = df['Time'] - start_time
 
     # Scale the concentrations to mMol using the recorded initial concentration
@@ -250,18 +250,87 @@ pro_csv_paths = [
     "concentration_estimation/Data2_13CPro2_areas.csv",
     "concentration_estimation/Data3_13CPro3_areas.csv"
 ]
+leu_csv_paths = [
+    "concentration_estimation/Data4_13CLeu1_areas.csv"
+]
 # Pro1 time_range = (0, 48), steps_per_hour=5
 # Pro2 time_range = (-7, 33), steps_per_hour=5
 # Pro3 time_range = (-11, 30), steps_per_hour=5
+"""
 time_ranges = {
     "13CPro1": (0, 48),
     "13CPro2": (-7, 33),
     "13CPro3": (-11, 30)
 }
-for csv_path in pro_csv_paths:
+"""
+time_ranges = {
+    "13CLeu1": (-12, 24)
+}
+# for csv_path in pro_csv_paths:
+for csv_path in leu_csv_paths:
     plot_logistics = False
-    exp_id = [p for p in csv_path.split('_') if 'Pro' in p][0]
+    # exp_id = [p for p in csv_path.split('_') if 'Pro' in p][0]
+    exp_id = [p for p in csv_path.split('_') if 'Leu' in p][0]
 
+    get_time_correction(csv_path, isocaproate_col="13C_Isocaproate 0.7453", thresh=0.05, plot=True)
+
+target_col = "13C_Leu 1.7912"
+initial_concentration = 15.0 # mMol
+lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
+if plot_logistics:
+    plot_logistic_fit(lg_df, corrected_times, scaled_concs)
+leu_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+
+target_col = "Tryptophan 7.5354"
+initial_concentration = 0.490196078 # mMol
+lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
+if plot_logistics:
+    plot_logistic_fit(lg_df, corrected_times, scaled_concs)
+trp_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+
+target_col = "Isoleucine 1.2272"
+initial_concentration = 2.290076336 # mMol
+lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
+if plot_logistics:
+    plot_logistic_fit(lg_df, corrected_times, scaled_concs)
+ile_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+
+target_col = "Cysteine 3.3220"
+initial_concentration = 4.132231405 # mMol
+lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
+if plot_logistics:
+    plot_logistic_fit(lg_df, corrected_times, scaled_concs)
+cys_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+
+target_col = "Proline 2.0540"
+initial_concentration = 6.956521739 # mMol
+lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
+if plot_logistics:
+    plot_logistic_fit(lg_df, corrected_times, scaled_concs)
+pro_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+
+target_col = "Histidine 7.8415"
+initial_concentration = 0.64516129 # mMol
+lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
+if plot_logistics:
+    plot_logistic_fit(lg_df, corrected_times, scaled_concs)
+his_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+
+target_col = "Gly 3.5467"
+initial_concentration = 1.333333333 # mMol
+lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
+if plot_logistics:
+    plot_logistic_fit(lg_df, corrected_times, scaled_concs)
+gly_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+
+target_col = "Glucose 5.2321"
+initial_concentration = 27.77777778 # mMol
+lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
+if plot_logistics:
+    plot_logistic_fit(lg_df, corrected_times, scaled_concs)
+glc_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+
+    """
     target_col = "Proline 4.2469"
     initial_concentration = 15.0  # mMol
     lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
@@ -296,13 +365,15 @@ for csv_path in pro_csv_paths:
     if plot_logistics:
         plot_logistic_fit(lg_df, corrected_times, scaled_concs)
     ile_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
+    """
 
-    # 1. Load model
-    objective = "ATP_sink"
-    modelfile = "/data/local/jy1008/MA-host-microbiome/nmr-cdiff/data/icdf843.json"
-    model = cb.io.load_json_model(modelfile)
-    model.objective = objective
+# 1. Load model
+objective = "ATP_sink"
+modelfile = "/data/local/jy1008/MA-host-microbiome/nmr-cdiff/data/icdf843.json"
+model = cb.io.load_json_model(modelfile)
+model.objective = objective
 
+    """
     constraints = {
         "Ex_proL": MetaboliteConstraint("Ex_proL", pro_flux_fn),
         "Ex_glc": MetaboliteConstraint("Ex_glc", glc_flux_fn),
@@ -310,6 +381,17 @@ for csv_path in pro_csv_paths:
         "Ex_leuL": MetaboliteConstraint("Ex_leuL", leu_flux_fn),
         "Ex_ileL": MetaboliteConstraint("Ex_ileL", ile_flux_fn)
     }
+    """
+constraints = {
+    "Ex_proL": MetaboliteConstraint("Ex_proL", pro_flux_fn),
+    "Ex_glc": MetaboliteConstraint("Ex_glc", glc_flux_fn),
+    "Ex_leuL": MetaboliteConstraint("Ex_leuL", leu_flux_fn),
+    "Ex_ileL": MetaboliteConstraint("Ex_ileL", ile_flux_fn),
+    "Ex_trpL": MetaboliteConstraint("Ex_trpL", trp_flux_fn),
+    "Ex_cysL": MetaboliteConstraint("Ex_cysL", cys_flux_fn),
+    # "Ex_his": MetaboliteConstraint("Ex_his", his_flux_fn)
+    "Ex_gly": MetaboliteConstraint("Ex_gly", gly_flux_fn)
+}
 
     """
     tracked_reactions = [   
@@ -322,18 +404,18 @@ for csv_path in pro_csv_paths:
         "RNF-Complex"
     ]
     """
-    tracked_reactions = [
-        "ATP_sink",
-        "ATPsynth4_1",
-        "ID_233",
-        "ID_280",
-        "ID_252",
-        "ID_321",
-        "ID_146",
-        "ID_623",
-        "ID_366",
-        "ID_297"
-    ]
+tracked_reactions = [
+    "ATP_sink",
+    "ATPsynth4_1",
+    "ID_233",
+    "ID_280",
+    "ID_252",
+    "ID_321",
+    "ID_146",
+    "ID_623",
+    "ID_366",
+    "ID_297"
+]
     """
     with open("ATP_sink_reactions_list.txt", "r") as f:
         tracked_reactions = [line.strip() for line in f]
@@ -344,38 +426,38 @@ for csv_path in pro_csv_paths:
     # ID_135: proL_c --> proD_c (proline racemase)
     # ID_314: proline --> 5-aminovalerate
 
-    sim = dFBA(
-        model=model,
-        objective=objective,
-        constraints=constraints,
-        time_range=time_ranges[exp_id],
-        steps_per_hour=5,
-        # tracked_reactions=["ATP_sink", "ID_314", "ID_135"],
-        # tracked_reactions=["ATP_sink", "ID_314", "ID_135", 
-        #                    "Trans_glc", "Ex_proL", "Ex_leuL", 
-        #                    "Ex_valL", "Ex_ileL", "Ex_thrL", "Sec_ac", 
-        #                    "Ex_alaL", "Ex_cysL", "Sec_ppa", "Sec_2abut", "ID_326"],
-        # tracked_reactions=["ATP_sink", "ID_251", "ID_252", "ID_512", "ID_474", "ID_49",
-        #                 "ID_280", "ID_321", "ID_146", "ID_366", "ID_1021311", "ID_1021312",
-        #                 "ID_1021313", "PPAKr", "ATPsynth4_1", "BUK", "IACK", "ImzACK", "HPhACK",
-        #                 "Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"],
-        tracked_reactions = tracked_reactions,
-        fva=True
-    )
+sim = dFBA(
+    model=model,
+    objective=objective,
+    constraints=constraints,
+    time_range=time_ranges[exp_id],
+    steps_per_hour=5,
+    # tracked_reactions=["ATP_sink", "ID_314", "ID_135"],
+    # tracked_reactions=["ATP_sink", "ID_314", "ID_135", 
+    #                    "Trans_glc", "Ex_proL", "Ex_leuL", 
+    #                    "Ex_valL", "Ex_ileL", "Ex_thrL", "Sec_ac", 
+    #                    "Ex_alaL", "Ex_cysL", "Sec_ppa", "Sec_2abut", "ID_326"],
+    # tracked_reactions=["ATP_sink", "ID_251", "ID_252", "ID_512", "ID_474", "ID_49",
+    #                 "ID_280", "ID_321", "ID_146", "ID_366", "ID_1021311", "ID_1021312",
+    #                 "ID_1021313", "PPAKr", "ATPsynth4_1", "BUK", "IACK", "ImzACK", "HPhACK",
+    #                 "Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"],
+    tracked_reactions = tracked_reactions,
+    fva=True
+)
 
-    sim.run()
-    sim.export_results(exp_id)
+sim.run()
+sim.export_results(exp_id)
 
-    # plot resulting fluxes
-    df = sim.solution_fluxes
+# plot resulting fluxes
+df = sim.solution_fluxes
 
-    fva_data = {}
-    for rxn in sim.tracked_reactions:
-        fva_data[f"{rxn}_min"] = sim.fva_bounds[rxn]["min"]
-        fva_data[f"{rxn}_max"] = sim.fva_bounds[rxn]["max"]
-    fva_df = pd.DataFrame(fva_data, index=sim.timecourse)
+fva_data = {}
+for rxn in sim.tracked_reactions:
+    fva_data[f"{rxn}_min"] = sim.fva_bounds[rxn]["min"]
+    fva_data[f"{rxn}_max"] = sim.fva_bounds[rxn]["max"]
+fva_df = pd.DataFrame(fva_data, index=sim.timecourse)
 
-    df = df.join(fva_df)
+df = df.join(fva_df)
 
     # reactions = ["ID_314", "ID_314_min", "ID_314_max"]
     # reactions = ["ATP_sink", "Trans_glc", "Ex_proL", "Ex_leuL", 
@@ -393,78 +475,78 @@ for csv_path in pro_csv_paths:
     # reactions = ["ATP_sink", "ID_251", "ID_252", "ID_512", "ID_474", "ID_49",
     #              "ID_280", "ID_321", "ID_146", "ID_366", "ID_1021311", "ID_1021312",
     #              "ID_1021313", "PPAKr", "ATPsynth4_1", "BUK", "IACK", "ImzACK", "HPhACK"]
-    plt.rc('axes', prop_cycle=cycler('color', plt.cm.tab20.colors))
-    # df_conc = plot_integrated_fluxes(df, reactions, initial_conc=0)
-    plot_raw_fluxes(df, tracked_reactions, outname=f"dfba_flux_out_{exp_id}", model=model, plot_bounds=False)
+plt.rc('axes', prop_cycle=cycler('color', plt.cm.tab20.colors))
+# df_conc = plot_integrated_fluxes(df, reactions, initial_conc=0)
+plot_raw_fluxes(df, tracked_reactions, outname=f"dfba_flux_out_{exp_id}", model=model, plot_bounds=False)
 
-    # Grab interesting reactions
-    flux_df = pd.DataFrame.from_dict(sim.all_fluxes, orient='index')
-    flux_df.index.name = "Time"
+# Grab interesting reactions
+flux_df = pd.DataFrame.from_dict(sim.all_fluxes, orient='index')
+flux_df.index.name = "Time"
 
-    def is_interesting_flux(series, min_peak=0.5, min_range=0.5):
-        s = series.dropna().values
-        if len(s) == 0:
-            return False
-        max_val = np.max(s)
-        min_val = np.min(s)
-        return (max_val >= min_peak) and ((max_val - min_val) >= min_range)
+def is_interesting_flux(series, min_peak=0.5, min_range=0.5):
+    s = series.dropna().values
+    if len(s) == 0:
+        return False
+    max_val = np.max(s)
+    min_val = np.min(s)
+    return (max_val >= min_peak) and ((max_val - min_val) >= min_range)
 
-    interesting_reactions = [
-        rxn for rxn in flux_df.columns
-        if is_interesting_flux(flux_df[rxn], min_peak=0.5, min_range=0.25)
-    ]
+interesting_reactions = [
+    rxn for rxn in flux_df.columns
+    if is_interesting_flux(flux_df[rxn], min_peak=0.5, min_range=0.25)
+]
 
-    bounding_reactions = ["Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"]
-    interesting_reactions_gt2 = [
-        rxn for rxn in flux_df.columns
-        if is_interesting_flux(flux_df[rxn], min_peak=2.0, min_range=0.25)
-    ]
-    interesting_reactions_gt2 = [rxn for rxn in interesting_reactions_gt2 if rxn not in bounding_reactions]
+bounding_reactions = ["Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"]
+interesting_reactions_gt2 = [
+    rxn for rxn in flux_df.columns
+    if is_interesting_flux(flux_df[rxn], min_peak=2.0, min_range=0.25)
+]
+interesting_reactions_gt2 = [rxn for rxn in interesting_reactions_gt2 if rxn not in bounding_reactions]
 
-    interesting_reactions_lt2 = [
-        rxn for rxn in flux_df.columns
-        if is_interesting_flux(flux_df[rxn], min_peak=0.5, min_range=0.25)
-    ]
-    interesting_reactions_lt2 = [rxn for rxn in interesting_reactions_lt2
-                                if rxn not in interesting_reactions_gt2
-                                and rxn not in bounding_reactions]
+interesting_reactions_lt2 = [
+    rxn for rxn in flux_df.columns
+    if is_interesting_flux(flux_df[rxn], min_peak=0.5, min_range=0.25)
+]
+interesting_reactions_lt2 = [rxn for rxn in interesting_reactions_lt2
+                            if rxn not in interesting_reactions_gt2
+                            and rxn not in bounding_reactions]
 
 
-    def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.html"):
-        """
-        Plot raw fluxes for specified reactions and save as HTML.
-        """
-        fig = go.Figure()
+def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.html"):
+    """
+    Plot raw fluxes for specified reactions and save as HTML.
+    """
+    fig = go.Figure()
 
-        for rxn in reactions:
-            if rxn in flux_df.columns:
-                rxn_name = ""
-                if model is not None:
-                    rxn_obj = model.reactions.get_by_id(rxn)
-                    rxn_name = rxn_obj.name
-                fig.add_trace(go.Scatter(
-                    x=flux_df.index,
-                    y=flux_df[rxn],
-                    mode='lines',
-                    name=f"{rxn_name} ({rxn})",
-                    hoverinfo='name+y',
-                    line=dict(width=1)
-                ))
+    for rxn in reactions:
+        if rxn in flux_df.columns:
+            rxn_name = ""
+            if model is not None:
+                rxn_obj = model.reactions.get_by_id(rxn)
+                rxn_name = rxn_obj.name
+            fig.add_trace(go.Scatter(
+                x=flux_df.index,
+                y=flux_df[rxn],
+                mode='lines',
+                name=f"{rxn_name} ({rxn})",
+                hoverinfo='name+y',
+                line=dict(width=1)
+            ))
 
-        fig.update_layout(
-            title="Raw Fluxes",
-            xaxis_title="Time",
-            yaxis_title="Flux",
-            hovermode='closest',
-            showlegend=True,
-            width=1000,
-            height=700
-        )
+    fig.update_layout(
+        title="Raw Fluxes",
+        xaxis_title="Time",
+        yaxis_title="Flux",
+        hovermode='closest',
+        showlegend=True,
+        width=1000,
+        height=700
+    )
 
-        fig.write_html(outname)
-        fig.show()
+    fig.write_html(outname)
+    fig.show()
 
-    plot_raw_fluxes_html(flux_df, interesting_reactions, model=model, outname=f'interesting_fluxes_all_v4_{exp_id}.html')
-    plot_raw_fluxes_html(flux_df, bounding_reactions, model=model, outname=f'interesting_fluxes_v2_bounding_v4_{exp_id}.html')
-    plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, model=model, outname=f'interesting_fluxes_v2_gt2_v4_{exp_id}.html')
-    plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model, outname=f'interesting_fluxes_v2_lt2_v4_{exp_id}.html')
+plot_raw_fluxes_html(flux_df, interesting_reactions, model=model, outname=f'interesting_fluxes_all_v4_{exp_id}.html')
+plot_raw_fluxes_html(flux_df, bounding_reactions, model=model, outname=f'interesting_fluxes_v2_bounding_v4_{exp_id}.html')
+plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, model=model, outname=f'interesting_fluxes_v2_gt2_v4_{exp_id}.html')
+plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model, outname=f'interesting_fluxes_v2_lt2_v4_{exp_id}.html')

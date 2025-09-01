@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 from lmfit.models import LorentzianModel, GaussianModel, VoigtModel, PseudoVoigtModel
 import numpy as np
 
-def interactive_peak_selector(x_data, y_data, result, model_type="lorentzian", ref_ppm=None):
+def interactive_peak_selector(x_data, y_data, result, model_type="lorentzian", ref_ppm=None, plot_label=None, savepath=None):
     """
     Interactive viewer to select/deselect individual fitted peaks.
 
@@ -34,7 +34,7 @@ def interactive_peak_selector(x_data, y_data, result, model_type="lorentzian", r
     }
     model_class = model_map[model_type.lower()]
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(x_data, y_data, "b.", label="Data")
     ax.plot(x_data, result.best_fit, "r-", label="Best fit")
 
@@ -50,14 +50,14 @@ def interactive_peak_selector(x_data, y_data, result, model_type="lorentzian", r
         line, = ax.plot(x_data, comp, "--", label=f"Peak {i+1}",
                         picker=True, pickradius=5)
         line_objects.append(line)
-        selection_state[line] = True  # default = included
+        selection_state[line] = False  # default = included
 
     ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
     ax.set_xlabel("ppm")
     ax.set_ylabel("Intensity")
     ax.invert_xaxis()
     if ref_ppm is not None:
-        ax.set_title(f"Peaks near {ref_ppm:.3f} ppm")
+        ax.set_title(f"{plot_label} peaks near {ref_ppm:.3f} ppm")
 
     # Toggle function
     def on_pick(event):
@@ -75,6 +75,15 @@ def interactive_peak_selector(x_data, y_data, result, model_type="lorentzian", r
             fig.canvas.draw_idle()
 
     fig.canvas.mpl_connect("pick_event", on_pick)
+
+    # Save when the window is closed
+    def on_close(event):
+        if savepath is not None:
+            fig.savefig(savepath, bbox_inches="tight")
+            print(f"Figure saved to {savepath}")
+
+    fig.canvas.mpl_connect("close_event", on_close)
+
     plt.show()
 
     # Return list of selected peak indices

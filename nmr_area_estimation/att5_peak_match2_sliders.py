@@ -17,11 +17,33 @@ plt.close('all')
 # input_ref_peaks = os.path.join(working_dir, "cfg_1H.txt")
 # out_csv = os.path.join(working_dir, "peak_areas_pro1_lmfit.csv")
 
-working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data8_13CGlc2"
-input_stack = os.path.join(working_dir, "Data8_13CGlc2_1H.xlsx")
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
+# input_stack = os.path.join(working_dir, "Data7_13CGlc1_13C.xlsx")
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data8_13CGlc2"
+# input_stack = os.path.join(working_dir, "Data8_13CGlc2_13C.xlsx")
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data9_13CGlc3"
+# input_stack = os.path.join(working_dir, "Data9_13CGlc3_13C.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_13C_temp.txt")
+
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
+# input_stack = os.path.join(working_dir, "Data7_13CGlc1_1H.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+
+# 13C Glc product standards
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards"
+# input_stack = os.path.join(working_dir, "traces_13C_annot.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_13C_temp.txt")
+
+# 1H Glc product standards
+working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards"
+input_stack = os.path.join(working_dir, "traces_1H_annot.xlsx")
+input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data8_13CGlc2"
+# input_stack = os.path.join(working_dir, "Data8_13CGlc2_1H.xlsx")
 # input_stack = os.path.join(working_dir, "Data8_13CGlc2_13C.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_1H.txt")
-input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 # input_ref_peaks = os.path.join(working_dir, "cfg_13C_temp.txt")
 # out_csv = os.path.join(working_dir, "peak_areas_glc2_lmfit.csv")
 
@@ -29,6 +51,15 @@ input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 # input_stack = os.path.join(working_dir, "Data4_13CLeu1_1H.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_1H.txt")
 # out_csv = os.path.join(working_dir, "peak_areas_leu1_lmfit.csv")
+
+# for 1H
+# base_fit_window = 0.08
+base_fit_window = 0.08
+# base_fit_window = 0.2
+# for 13C
+# base_fit_window =0.4
+# base_fit_window = 100
+prominence_factor = 0.1
 
 # Load data
 # def run_fit(working_dir, input_stack, input_ref_peaks, out_csv):
@@ -40,6 +71,12 @@ data = data.astype(float)
 ppm = data['ppm'].values
 traces = data.drop(columns='ppm').values
 n_traces = traces.shape[1]
+try:
+    real_times = df.iloc[1, 1:df.shape[0]].values.astype(float)
+except:
+    # standard solution, 102_13C
+    real_times = df.iloc[1, 1:df.shape[0]].values
+    real_times = np.array([s.split("_")[0] for s in real_times]).astype(float)
 
 ref_peaks = pd.read_csv(input_ref_peaks, sep="\t", header=None, names=["ppm", "label"])
 
@@ -61,7 +98,7 @@ def lorentzian_area_lmfit(amplitude, sigma):
     return np.pi * amplitude * sigma
 
 
-def plot_traces(data, ref_ppm, plot_title, base_fit_window=0.04):
+def plot_traces(data, ref_ppm, real_times, plot_title, base_fit_window=0.04):
     ppm = data['ppm'].values
     traces = data.drop(columns='ppm').values
     n_traces = traces.shape[1]
@@ -80,7 +117,8 @@ def plot_traces(data, ref_ppm, plot_title, base_fit_window=0.04):
         mask = (ppm >= ref_ppm - base_fit_window) & (ppm <= ref_ppm + base_fit_window)
         x_data = ppm[mask]
         y_data = y[mask]
-        ax.plot(x_data, y_data, color=colors[i], label=f'Trace {t}')
+        # ax.plot(x_data, y_data, color=colors[i], label=f'Trace {t}')
+        ax.plot(x_data, y_data, color=colors[i], label=f'Trace {real_times[t]}')
 
     ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
     ax.set_xlabel("ppm")
@@ -89,7 +127,7 @@ def plot_traces(data, ref_ppm, plot_title, base_fit_window=0.04):
     ax.invert_xaxis()
     plt.show(block=False)
 
-def plot_traces_colorbar(data, ref_ppm, plot_title, base_fit_window=0.04):
+def plot_traces_colorbar(data, ref_ppm, real_times, plot_title, base_fit_window=0.04):
     ppm = data['ppm'].values
     traces = data.drop(columns='ppm').values
     n_traces = traces.shape[1]
@@ -101,14 +139,15 @@ def plot_traces_colorbar(data, ref_ppm, plot_title, base_fit_window=0.04):
 
     # Choose a colormap
     colormap = cm.viridis
-    norm = mcolors.Normalize(vmin=indices.min(), vmax=indices.max())
+    # norm = mcolors.Normalize(vmin=indices.min(), vmax=indices.max())
+    norm = mcolors.Normalize(vmin=real_times.min(), vmax=real_times.max())
 
     for t in indices:
         y = traces[:, t]
         mask = (ppm >= ref_ppm - base_fit_window) & (ppm <= ref_ppm + base_fit_window)
         x_data = ppm[mask]
         y_data = y[mask]
-        ax.plot(x_data, y_data, color=colormap(norm(t)))
+        ax.plot(x_data, y_data, color=colormap(norm(real_times[t])))
 
     # Add colorbar
     sm = cm.ScalarMappable(cmap=colormap, norm=norm)
@@ -121,7 +160,7 @@ def plot_traces_colorbar(data, ref_ppm, plot_title, base_fit_window=0.04):
     ax.invert_xaxis()
     plt.show(block=False)
 
-def calculate_area(data, label, ref_ppm, t, exp_name="", base_fit_window=0.04, prominence_factor=0.1,
+def calculate_area(data, label, ref_ppm, t, real_times, exp_name="", base_fit_window=0.04, prominence_factor=0.1,
                    init_bounds=None, seed=101):
     np.random.seed(seed)
 
@@ -150,9 +189,10 @@ def calculate_area(data, label, ref_ppm, t, exp_name="", base_fit_window=0.04, p
                                 prominence_factor=prominence_factor,
                                 base_fit_window=base_fit_window,
                                 savepath=nmr_fit_outfile)
-    
+
     # add the trace index and experiment name to the saved state
     window_state["trace_index"] = int(t)
+    window_state["time"] = float(real_times[t])
     window_state["experiment_name"] = exp_name
     window_state["reference_peak"] = float(ref_ppm)
     window_state["metabolite"] = label
@@ -175,14 +215,7 @@ for _, ref in ref_peaks.iterrows():
     label = ref['label']
     print(f"{label} {ref_ppm}")
 
-    # for 1H
-    base_fit_window = 0.04
-    # for 13C
-    # base_fit_window =0.15
-    # base_fit_window = 100
-    prominence_factor = 0.1
-
-    plot_traces_colorbar(data, ref_ppm, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
+    plot_traces_colorbar(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
 
     for t in range(n_traces):
         exp_name = os.path.splitext(os.path.basename(input_stack))[0]
@@ -197,7 +230,7 @@ for _, ref in ref_peaks.iterrows():
         else:
             print("-" * 80)
             print(f"Fitting trace {t}/{n_traces} for peak {label} at {ref_ppm} ppm in {exp_name}")
-            window_state = calculate_area(data=data, label=label, ref_ppm=ref_ppm, t=t,
+            window_state = calculate_area(data=data, label=label, ref_ppm=ref_ppm, t=t, real_times=real_times,
                                         exp_name = exp_name, base_fit_window=base_fit_window,
                                         prominence_factor=prominence_factor, init_bounds=init_bounds, seed=101)
             init_bounds = (window_state["lower_ppm_bound"], window_state["upper_ppm_bound"])

@@ -2,12 +2,42 @@ import os
 import json
 import pandas as pd
 
-input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/progress_report_figs2"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data8_13CGlc2"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data9_13CGlc3"
 
-exp_name = "Data8_13CGlc2_1H"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data9_13CGlc3"
+
+input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1_1H"
+
+# exp_name = "Data7_13CGlc1_13C"
 # exp_name = "Data8_13CGlc2_13C"
+# exp_name = "Data9_13CGlc3_13C"
 
-# metabolite = "Isobutyrate"
+exp_name = "Data7_13CGlc1_1H"
+
+# def scale_to_mMol(df):
+#     df = df.copy()
+#     df = df.sort_values(by="Time")
+#     df_mMol = df["Time"].to_frame()
+#
+#     initial_Glc_conc = 27.77777778 # mM
+#
+#     gluc_a_values = {"13C_Acetate": 14.18,
+#                      "13C_Alanine": 3.19,
+#                      "13C_Butyrate": 2.35,
+#                      "13C_Ethanol": 4.93}
+#
+#     if "13C_Glucose" in df.columns:
+#         df_mMol["13C_Glucose"] = df["13C_Glucose"] * (initial_Glc_conc / df["13C_Glucose"].iloc[0])
+#     for metab in gluc_a_values.keys():
+#         if metab in df.columns:
+#             last_conc = initial_Glc_conc * df[metab].iloc[-1] / df["13C_Glucose"].iloc[0] * gluc_a_values[metab]
+#             df_mMol[metab] = df[metab] * last_conc / df[metab].iloc[-1]
+#
+#     return df_mMol
+
+
 
 records = []
 
@@ -29,16 +59,49 @@ df = df[df["experiment_name"] == exp_name]
 print(df.head())
 print(len(df), "rows loaded")
 
-df_grouped = df.pivot(index="metabolite", columns="trace_index", values="total_area")
+df_grouped = df.pivot(index="metabolite", columns="time", values="total_area")
 df_grouped = df_grouped.T
-df_grouped = df_grouped.reset_index().rename(columns={"trace_index": "Time"})
+df_grouped = df_grouped.reset_index().rename(columns={"time": "Time"})
 
-# isobutyrate areas were derived from 3 peaks, so divide by 3
-df_grouped["Isobutyrate"] = df_grouped["Isobutyrate"] / 3.0
-df_grouped["13C_butyrate"] = df_grouped["13C_butyrate"] / 3.0
-df_grouped["Threonine"] = df_grouped["Threonine"] / 2.0
-df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 2.0
-df_grouped["Tryptophan"] = df_grouped["Tryptophan"] / 2.0
+# scale_to_mMol = True
+
+if exp_name in ["Data7_13CGlc1_13C"]:
+    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 4.0
+    df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 2.0
+    df_grouped["13C_Lactate"] = df_grouped["13C_Lactate"] / 2.0
+    df_grouped["13C_Butanol"] = df_grouped["13C_Butanol"] / 3.0
+    df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 2.0
+    df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 2.0
+    df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 2.0
+    # if scale_to_mMol:
+elif exp_name in ["Data8_13CGlc2_13C", "Data9_13CGlc3_13C"]:
+    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 4.0
+    df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 2.0
+    df_grouped["13C_Lactate"] = df_grouped["13C_Lactate"] / 2.0
+    # df_grouped["13C_Butanol"] = df_grouped["13C_Butanol"] / 3.0
+    df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 2.0
+    df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 2.0
+    # df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 2.0
+elif exp_name in ["Data7_13CGlc1_1H"]:
+    df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 2.0
+    df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 1.0
+    df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 4.0
+    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 1.0
+    df_grouped["13C_butyrate"] = df_grouped["13C_butyrate"] / 3.0
+    df_grouped["13C_mButanol"] = df_grouped["13C_mButanol"] / 3.0
+    df_grouped["2-aminobutyrate"] = df_grouped["2-aminobutyrate"] / 3.0
+    df_grouped["5-aminovalerate"] = df_grouped["5-aminovalerate"] / 3.0
+    df_grouped["Arginine"] = df_grouped["Arginine"] / 3.0
+    df_grouped["Formate"] = df_grouped["Formate"] / 1.0
+    df_grouped["Isobutyrate"] = df_grouped["Isobutyrate"] / 4.0
+    df_grouped["Isocaproate"] = df_grouped["Isocaproate"] / 3.0
+    df_grouped["Leucine"] = df_grouped["Leucine"] / 4.0
+    df_grouped["Methionine"] = df_grouped["Methionine"] / 1.0
+    df_grouped["Proline"] = df_grouped["Proline"] / 3.0
+    df_grouped["Threonine"] = df_grouped["Threonine"] / 2.0
+    df_grouped["Tryptophan"] = df_grouped["Tryptophan"] / 2.0
+else:
+    raise ValueError(f"Unknown exp_name {exp_name}")
 
 import os, pickle
 import cobra as cb
@@ -93,6 +156,7 @@ def logistic_inference(df_grouped, target_col, exp_id):
 
     # return form pickle if it exists
     pickle_out = f"stan_logistic_samples_{exp_id}_{target_col.replace(' ', '_')}.pkl"
+    pickle_out = os.path.join(input_dir, pickle_out)
     if os.path.exists(pickle_out):
         with open(pickle_out, "rb") as f:   # "rb" = read, binary mode
             logistic_df = pickle.load(f)
@@ -141,7 +205,7 @@ model {
     C ~ normal(0.5, 0.5);
 
     // slope D: robust prior that discourages near-zero slopes
-    // target += student_t_lpdf(D | 3, 0, 1) 
+    // target += student_t_lpdf(D | 3, 0, 1)
     //         - log(1 + exp(-abs(D))); // optional: extra repulsion from zero
     D_mag ~ student_t(3, 0, 1); // slope magnitude
     //D_sign_raw ~ normal(0, 1);  // slope sign
@@ -177,7 +241,7 @@ model {
 
     with open(pickle_out, "wb") as f:  # "wb" = write binary
         pickle.dump(logistic_df, f)
-    
+
     # return the df of sampled logistic curves
     return logistic_df, corrected_times, scaled_concs
 
@@ -268,12 +332,12 @@ def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_c
     y_mean = np.mean(y_preds, axis=0)
     lower, upper = np.percentile(y_preds, [2.5, 97.5], axis=0)
 
-    ax1.plot(corrected_times, y_mean, linewidth=2, color=color, label=f'{target_col} mean')
+    ax1.plot(corrected_times, y_mean, linewidth=2, color=color, label=f'{target_col} 95% CI')
     ax1.fill_between(corrected_times, lower, upper,
-                     color=color, alpha=0.2, label=f'{target_col} 95% CI')
+                     color=color, alpha=0.2, label='_nolegend_')
 
     # Original data
-    ax1.scatter(corrected_times, scaled_concs, color=color, s=16, label=f'{target_col} data')
+    ax1.scatter(corrected_times, scaled_concs, color=color, s=16, label='_nolegend_')
 
 # metabolites = ["Formate", "Isobutyrate", "Isoleucine", "Valine"]
 # metabolites = ["13C_butyrate", "2-aminobutyrate", "Isobutyrate", "Threonine"]
@@ -283,7 +347,7 @@ colors = cm.get_cmap("tab10", len(metabolites))
 
 # Get the colormap object with the specified number of colors
 import matplotlib as mpl
-cmap = mpl.colormaps['tab10'].resampled(len(metabolites))
+cmap = mpl.colormaps['tab20'].resampled(len(metabolites))
 
 # Access the list of colors from the colormap object
 colors = cmap.colors
@@ -293,6 +357,8 @@ colors = cmap.colors
 fig, ax1 = plt.subplots(1, 1, figsize=(10, 8), sharex=True)
 
 for i, target_col in enumerate(metabolites):
+    print('-'*40)
+    print(target_col)
     logistic_df, corrected_times, scaled_concs = logistic_inference(df_grouped,
                                                                 target_col=target_col,
                                                                 exp_id="test_glc1H")
@@ -300,12 +366,14 @@ for i, target_col in enumerate(metabolites):
 
 # Common labels and legend
 # ax2.set_xlabel('Time (hours)')
-ax1.set_xlabel('Timepoint')
+# ax1.set_xlabel('Timepoint')
+ax1.set_xlabel('Time (hours)')
 ax1.set_ylabel('NMR area under peaks (a.u.)')
 # ax2.set_ylabel('Scaled Concentration (mMol)')
 # ax1.set_title("Logistic Fits (Means + 95% CI)")
 # ax2.set_title("Posterior Sample Logistic Curves")
 ax1.legend()
 plt.tight_layout()
-plt.savefig("logistic_fits_progress_report2_1H.pdf")
+output_trajct_fname = f"logistic_fits_{exp_name}.pdf"
+plt.savefig(os.path.join(input_dir, output_trajct_fname))
 plt.show()

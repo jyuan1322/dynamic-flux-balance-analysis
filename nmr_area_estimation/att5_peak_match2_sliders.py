@@ -25,6 +25,11 @@ plt.close('all')
 # input_stack = os.path.join(working_dir, "Data9_13CGlc3_13C.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_13C_temp.txt")
 
+### Leucine 1 (deconvolve) 9/21/2025
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data4_13CLeu1"
+# input_stack = os.path.join(working_dir, "Data4_13CLeu1_1H.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+
 # working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
 # input_stack = os.path.join(working_dir, "Data7_13CGlc1_1H.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
@@ -78,7 +83,7 @@ except:
     real_times = df.iloc[1, 1:df.shape[0]].values
     real_times = np.array([s.split("_")[0] for s in real_times]).astype(float)
 
-ref_peaks = pd.read_csv(input_ref_peaks, sep="\t", header=None, names=["ppm", "label"])
+ref_peaks = pd.read_csv(input_ref_peaks, sep="\t", header=None, names=["ppm", "label"], comment="#")
 
 def make_json_serializable(obj):
     """

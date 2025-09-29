@@ -125,7 +125,7 @@ def plot_rel_color(x, y, xlabel, ylabel, c=None, cmap="viridis"):
 
 
 
-
+merged.to_csv("standard_regression_plots_13C.csv", index=False)
 
 plot_rel(merged["13C_Glucose_ratio"], merged["13C_Acetate_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
@@ -191,6 +191,7 @@ metab_list = ["13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_
 for metab in metab_list:
     merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
 
+merged.to_csv("standard_regression_plots_1H.csv", index=False)
 
 plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Acetate_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",

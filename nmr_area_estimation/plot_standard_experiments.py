@@ -45,8 +45,20 @@ df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 2.0
 
 merged = pd.merge(df_grouped, ref_concs, on='Time')
 
+
+# Add acquisition time rescale from Xi
+acqus_times = {3:np.nan, 12:4096, 22:1024, 32:1024, 42:2048, 52:1024, 62:1024,
+               72:1024, 82:1024, 92:4096, 102:1024, 112:4096, 122:1024}
+acqus_times = pd.DataFrame(list(acqus_times.items()), columns=["Time", "Acqus_Time"])
+merged = merged.merge(acqus_times, on="Time", how="left")
+# remove entries without Acqus_Time
+merged = merged[~merged["Acqus_Time"].isna()]
+
 metab_list = ["13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_Ethanol"]
 for metab in metab_list:
+    # rescale by Acqus_Time
+    # merged[metab] = merged[metab] / merged["Acqus_Time"]
+    # calculate ratio
     merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
 
 
@@ -143,12 +155,28 @@ plot_rel(merged["13C_Glucose_ratio"], merged["13C_Ethanol_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Ethanol]/Peak Area mMol/a.u.")
 
+# standard curve using just glucose
+plot_rel(merged["13C_Glucose_mMol"], merged["13C_Glucose"],
+                xlabel="[13C_Glucose] (mMol)",
+                ylabel="13C_Glucose Peak Area (a.u.)")
 
+plot_rel(merged["Acqus_Time"], merged["13C_Glucose"],
+                xlabel="Number of scans",
+                ylabel="13C_Glucose Peak Area (a.u.)")
+
+plot_rel(merged["13C_Glucose_mMol"], merged["13C_Glucose"]/merged["Acqus_Time"],
+                xlabel="[13C_Glucose] (mMol)",
+                ylabel="13C_Glucose Peak Area (a.u.) / Number of scans")
+
+plot_rel(merged["13C_Glucose_mMol"], merged["13C_Glucose"]/np.sqrt(merged["Acqus_Time"]),
+                xlabel="[13C_Glucose] (mMol)",
+                ylabel="13C_Glucose Peak Area (a.u.) / sqrt(Number of scans)")
 
 # same procedure for 1H data
 
 
-input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data_Standards_1H"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data_Standards_1H"
+input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data_Standards_1H_V3"
 
 exp_name = "traces_1H_annot"
 
@@ -187,9 +215,35 @@ df_grouped = df_grouped.reset_index().rename(columns={"time": "Time"})
 
 merged = pd.merge(df_grouped, ref_concs, on='Time')
 
+# Add acquisition time rescale from Xi
+# acqus_times = {11: 0.5, 21:1, 31:1, 41:1/np.sqrt(2), 51:1, 61:1, 71:1,
+#                81:1, 91:0.5, 101:1, 111:0.5, 121:1}
+acqus_times = {11: 512, 21:128, 31:128, 41:256, 51:128, 61:128, 71:128,
+               81:128, 91:512, 101:128, 111:512, 121:128}
+acqus_times = pd.DataFrame(list(acqus_times.items()), columns=["Time", "Acqus_Time"])
+merged = merged.merge(acqus_times, on="Time", how="left")
+# remove entries without Acqus_Time
+merged = merged[~merged["Acqus_Time"].isna()]
+
+# Add scaling by total area
+
+total_areas = {11: 1597985.85263905, 21:363026.03883776, 31:382053.42846874,
+               41:636364.37455709, 51:298581.14083037, 61:348092.51816054,
+               71:406638.68362965, 81:289010.53542787, 91:1409229.00448348,
+               101:251404.54377862, 111:1317754.22866447, 121:215673.8013313}
+total_areas = pd.DataFrame(list(total_areas.items()), columns=["Time", "Total_Area"])
+merged = merged.merge(total_areas, on="Time", how="left")
+# remove entries without Total_Area
+merged = merged[~merged["Total_Area"].isna()]
+
 metab_list = ["13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_Ethanol"]
 for metab in metab_list:
+    # rescale by Acqus_Time
+    # merged[metab] = merged[metab] / merged["Acqus_Time"]
+    # calculate ratio
     merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
+
+merged["13C_Alanine2_ratio"] = merged["13C_Alanine2"] / (merged["13C_Alanine_mMol"])
 
 merged.to_csv("standard_regression_plots_1H.csv", index=False)
 
@@ -203,6 +257,11 @@ plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Alanine_ratio"],
                 ylabel="[13C_Alanine]/Peak Area mMol/a.u.",
                 c=merged["13C_Alanine"])
 
+plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Alanine2_ratio"],
+                xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
+                ylabel="[13C_Alanine2]/Peak Area mMol/a.u.",
+                c=merged["13C_Alanine2"])
+
 plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Butyrate_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Butyrate]/Peak Area mMol/a.u.",
@@ -212,3 +271,86 @@ plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Ethanol_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Ethanol]/Peak Area mMol/a.u.",
                 c=merged["13C_Ethanol"])
+
+
+plot_rel_color(merged["13C_Glucose_mMol"], merged["13C_Glucose"],
+                xlabel="13C_Glucose mMol",
+                ylabel="13_C_Glucose Peak Area a.u.",
+                c=merged["Time"])
+
+plot_rel_color(merged["13C_Glucose_mMol"], merged["13C_Glucose"] / merged["Acqus_Time"],
+                xlabel="13C_Glucose mMol",
+                ylabel="13_C_Glucose Peak Area a.u. / Number of scans",
+                c=merged["Time"])
+plot_rel_color(merged["13C_Glucose_mMol"], merged["13C_Glucose"] / np.sqrt(merged["Acqus_Time"]),
+                xlabel="13C_Glucose mMol",
+                ylabel="13_C_Glucose Peak Area a.u. / sqrt(Number of scans)",
+                c=merged["Time"])
+
+
+
+plot_rel_color(merged["13C_Glucose_mMol"], merged["13C_Glucose"] / merged["Total_Area"],
+                xlabel="13C_Glucose mMol",
+                ylabel="13_C_Glucose Peak Area (a.u.) / Total Area (a.u.)",
+                c=merged["Time"])
+# test correction both by Acqus_Time and Total_Area
+# (looks worse)
+plot_rel_color(merged["13C_Glucose_mMol"], merged["13C_Glucose"] / merged["Total_Area"] / np.sqrt(merged["Acqus_Time"]),
+                xlabel="13C_Glucose mMol",
+                ylabel="13_C_Glucose Peak Area (a.u.) / Total Area (a.u.)",
+                c=merged["Time"])
+
+plot_rel_color(merged["13C_Acetate_mMol"], merged["13C_Acetate"] / merged["Total_Area"],
+                xlabel="13C_Acetate mMol",
+                ylabel="13_C_Acetate Peak Area (a.u.) / Total Area (a.u.)",
+                c=merged["Time"])
+plot_rel_color(merged["13C_Alanine_mMol"], merged["13C_Alanine"] / merged["Total_Area"],
+                xlabel="13C_Alanine mMol",
+                ylabel="13_C_Alanine Peak Area (a.u.) / Total Area (a.u.)",
+                c=merged["Time"])
+plot_rel_color(merged["13C_Alanine_mMol"], merged["13C_Alanine2"] / merged["Total_Area"],
+                xlabel="13C_Alanine2 mMol",
+                ylabel="13_C_Alanine2 Peak Area (a.u.) / Total Area (a.u.)",
+                c=merged["Time"])
+plot_rel_color(merged["13C_Butyrate_mMol"], merged["13C_Butyrate"] / merged["Total_Area"],
+                xlabel="13C_Butyrate mMol",
+                ylabel="13_C_Butyrate Peak Area (a.u.) / Total Area (a.u.)",
+                c=merged["Time"])
+plot_rel_color(merged["13C_Ethanol_mMol"], merged["13C_Ethanol"] / merged["Total_Area"],
+                xlabel="13C_Ethanol mMol",
+                ylabel="13_C_Ethanol Peak Area (a.u.) / Total Area (a.u.)",
+                c=merged["Time"])
+
+"""
+merged_temp = merged[merged["Acqus_Time"] == 128]
+plot_rel_color(merged_temp["13C_Glucose_mMol"], merged_temp["13C_Glucose"],
+                xlabel="13C_Glucose mMol",
+                ylabel="13_C_Glucose Peak Area a.u.",
+                c=merged_temp["Time"])
+"""
+                
+"""
+# from att5_peak_match2_sliders.py
+# areas are negative because ppm is decreasing
+>>> real_times
+array([  1., 101.,  11., 111., 121.,   2.,  21.,  31.,  41.,   5.,  51.,
+        61.,  71.,  81.,  91.])
+>>> areas = -np.trapz(traces, x=ppm, axis=0)
+>>> areas
+array([   5725.15982512,  251404.54377862, 1597985.85263905,
+       1317754.22866447,  215673.8013313 ,   26750.70580491,
+        363026.03883776,  382053.42846874,  636364.37455709,
+          8888.56952334,  298581.14083037,  348092.51816054,
+        406638.68362965,  289010.53542787, 1409229.00448348])
+"""
+
+"""
+# area calculation with glucose peak exclusion
+glc_bounds = [5.280111526483787, 5.340041650219163]
+areas = -np.trapz(traces, x=ppm, axis=0)
+# mask for ppm values *outside* the excluded range
+mask = (ppm < glc_bounds[0]) | (ppm > glc_bounds[1])
+
+# integrate only where mask is True
+areas_glc = -np.trapz(traces[mask, :], x=ppm[mask], axis=0)
+"""

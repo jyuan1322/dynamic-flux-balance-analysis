@@ -12,11 +12,19 @@ from att5_peak_selector2_sliders import interactive_peak_selector
 # Close any existing plots (this also helps recover from Ctrl-C in previous run)
 plt.close('all')
 
+### Proline
 # working_dir = "/data/local/jy1008/MA-host-microbiome/XiChen_Data/TestData_V2_ProLeu/Data1_13CPro1"
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data1_13CPro1"
 # input_stack = os.path.join(working_dir, "Data1_13CPro1_1H.xlsx")
-# input_ref_peaks = os.path.join(working_dir, "cfg_1H.txt")
-# out_csv = os.path.join(working_dir, "peak_areas_pro1_lmfit.csv")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data2_13CPro2"
+# input_stack = os.path.join(working_dir, "Data2_13CPro2_1H.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data3_13CPro3"
+# input_stack = os.path.join(working_dir, "Data3_13CPro3_1H.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
+### 13C 13C_Glucose
 # working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
 # input_stack = os.path.join(working_dir, "Data7_13CGlc1_13C.xlsx")
 # working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data8_13CGlc2"
@@ -30,19 +38,19 @@ plt.close('all')
 # input_stack = os.path.join(working_dir, "Data4_13CLeu1_1H.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
-# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
-# input_stack = os.path.join(working_dir, "Data7_13CGlc1_1H.xlsx")
-# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
+input_stack = os.path.join(working_dir, "Data7_13CGlc1_1H.xlsx")
+input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
-# 13C Glc product standards
+### 13C Glc product standards
 # working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards"
 # input_stack = os.path.join(working_dir, "traces_13C_annot.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_13C_temp.txt")
 
-# 1H Glc product standards
-working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards"
-input_stack = os.path.join(working_dir, "traces_1H_annot.xlsx")
-input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+### 1H Glc product standards
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards"
+# input_stack = os.path.join(working_dir, "traces_1H_annot.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
 # working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data8_13CGlc2"
 # input_stack = os.path.join(working_dir, "Data8_13CGlc2_1H.xlsx")
@@ -59,8 +67,7 @@ input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
 # for 1H
 # base_fit_window = 0.08
-base_fit_window = 0.08
-# base_fit_window = 0.2
+base_fit_window = 0.04
 # for 13C
 # base_fit_window =0.4
 # base_fit_window = 100
@@ -98,9 +105,9 @@ def make_json_serializable(obj):
     else:
         return obj
 
-def lorentzian_area_lmfit(amplitude, sigma):
-    # lmfit Lorentzian 'sigma' is HWHM (half-width at half max)
-    return np.pi * amplitude * sigma
+# def lorentzian_area_lmfit(amplitude, sigma):
+#     # lmfit Lorentzian 'sigma' is HWHM (half-width at half max)
+#     return np.pi * amplitude * sigma
 
 
 def plot_traces(data, ref_ppm, real_times, plot_title, base_fit_window=0.04):
@@ -110,7 +117,7 @@ def plot_traces(data, ref_ppm, real_times, plot_title, base_fit_window=0.04):
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    nidxs = 20  # number of evenly spaced traces
+    nidxs = min(20, n_traces)  # number of evenly spaced traces
     indices = np.linspace(0, n_traces-1, nidxs, dtype=int)
 
     # Choose a colormap
@@ -220,7 +227,8 @@ for _, ref in ref_peaks.iterrows():
     label = ref['label']
     print(f"{label} {ref_ppm}")
 
-    plot_traces_colorbar(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
+    # plot_traces_colorbar(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
+    plot_traces(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
 
     for t in range(n_traces):
         exp_name = os.path.splitext(os.path.basename(input_stack))[0]

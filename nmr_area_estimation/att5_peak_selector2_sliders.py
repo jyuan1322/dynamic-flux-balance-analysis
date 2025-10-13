@@ -70,10 +70,12 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
         np.random.seed(window_state["seed"])
         print(f"Random seed set to {window_state['seed']}")
 
-        left, right = sorted([s_left.val, s_right.val])
+        left, right = sorted([s_left.val, s_right.val]) # inner boundary (sliders)
+        outer_left, outer_right = left - 0.05, right + 0.05  # expand for fitting
         window_state["lower_ppm_bound"] = left
         window_state["upper_ppm_bound"] = right
-        mask = (x_data >= left) & (x_data <= right)
+        # mask = (x_data >= left) & (x_data <= right)
+        mask = (x_data >= outer_left) & (x_data <= outer_right)
         if np.sum(mask) < 5:
             print("Too few points in region")
             return
@@ -201,12 +203,43 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
         print(f"Baseline: {baseline_params}")
 
         # calculate total area of the fit
-        fit_results = window_state["fit_results"]
-        x = fit_results["x"]
-        y = fit_results["best_fit"]
-        total_area = np.trapz(y, x)
+        # fit_results = window_state["fit_results"]
+        # x = fit_results["x"]
+        # y = fit_results["best_fit"]
+        # total_area = np.trapz(y, x)
+        # window_state["total_area"] = total_area
+        # calculate total area, only from peaks inside INNER region
+        total_area = 0.0
+        inner_mask = (x_sub >= left) & (x_sub <= right)
+        for i, comp in enumerate(components):
+            peak_center = component_params[i]["center"]
+            if left <= peak_center <= right:  # only keep peaks whose apex is inside inner window
+                total_area += np.trapz(comp[inner_mask], x_sub[inner_mask])
         window_state["total_area"] = total_area
         print(f"Total area under fitted curve: {total_area}")
+
+
+        # --- build composite curve of included peaks only ---
+        inner_left, inner_right = left, right
+        inner_mask = (x_sub >= inner_left) & (x_sub <= inner_right)
+
+        included_components = []
+        for i, comp in enumerate(components):
+            peak_center = component_params[i]["center"]
+            if inner_left <= peak_center <= inner_right:
+                included_components.append(comp)
+
+        if included_components:
+            included_sum = np.sum(included_components, axis=0)
+        else:
+            included_sum = np.zeros_like(x_sub)
+
+        # plot included composite (remove old one if exists)
+        if hasattr(fig, "included_line"):
+            fig.included_line.remove()
+        fig.included_line, = ax.plot(
+            x_sub, included_sum, "m-", lw=2, label="Included peaks"
+        )
 
     btn.on_clicked(on_button)
 

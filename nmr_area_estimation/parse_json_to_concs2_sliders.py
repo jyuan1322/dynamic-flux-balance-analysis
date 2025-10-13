@@ -1,6 +1,7 @@
 import os
 import json
 import pandas as pd
+import numpy as np
 
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1"
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data8_13CGlc2"
@@ -8,13 +9,19 @@ import pandas as pd
 
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data9_13CGlc3"
 
-input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1_1H"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1_1H"
+
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data1_13CPro1"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data2_13CPro2"
+input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data3_13CPro3"
 
 # exp_name = "Data7_13CGlc1_13C"
 # exp_name = "Data8_13CGlc2_13C"
 # exp_name = "Data9_13CGlc3_13C"
 
-exp_name = "Data7_13CGlc1_1H"
+# exp_name = "Data1_13CPro1_1H"
+# exp_name = "Data2_13CPro2_1H"
+exp_name = "Data3_13CPro3_1H"
 
 # def scale_to_mMol(df):
 #     df = df.copy()
@@ -100,6 +107,19 @@ elif exp_name in ["Data7_13CGlc1_1H"]:
     df_grouped["Proline"] = df_grouped["Proline"] / 3.0
     df_grouped["Threonine"] = df_grouped["Threonine"] / 2.0
     df_grouped["Tryptophan"] = df_grouped["Tryptophan"] / 2.0
+elif exp_name in ["Data1_13CPro1_1H", "Data2_13CPro2_1H", "Data3_13CPro3_1H"]:
+    # proline: 1 peak
+    # 5AV: 1 peak
+    proline_initial_conc = 6.96 # mMol
+    fiveAV_final_conc = proline_initial_conc
+    # scale proline to initial conc
+    initial_n_values_to_ave = 5
+    initial_pro_val = np.mean(df_grouped["Proline"][:initial_n_values_to_ave])
+    df_grouped["Proline"] = df_grouped["Proline"] / initial_pro_val * proline_initial_conc
+    final_n_values_to_ave = 10
+    final_5AV_val = np.mean(df_grouped["5-aminovalerate"][-(final_n_values_to_ave+1):-1])
+    df_grouped["5-aminovalerate"] = df_grouped["5-aminovalerate"] / final_5AV_val * fiveAV_final_conc
+    pass
 else:
     raise ValueError(f"Unknown exp_name {exp_name}")
 

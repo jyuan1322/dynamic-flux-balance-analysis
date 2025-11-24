@@ -19,56 +19,69 @@ def detect_nucleus(exp_dir):
     dic, _ = ng.bruker.read(exp_dir)
     return dic['acqus']['NUC1']
 
-# --- main ---
-base_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards"
 
-# Only include numeric directories (skip xlsx, txt, etc.)
-exp_dirs = sorted([d for d in glob.glob(os.path.join(base_dir, "*"))
-                   if os.path.isdir(d) and os.path.basename(d).isdigit()])
+def main():
+    # base_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--base_dir",
+        type=str,
+        required=True,
+        help="Path to directory containing Bruker experiment folders"
+    )
+    args = parser.parse_args()
+    base_dir = args.base_dir
 
-traces_1H = None
-traces_13C = None
+    # Only include numeric directories (skip xlsx, txt, etc.)
+    exp_dirs = sorted([d for d in glob.glob(os.path.join(base_dir, "*"))
+                    if os.path.isdir(d) and os.path.basename(d).isdigit()])
 
-for exp_dir in exp_dirs:
-    pdata_path = os.path.join(exp_dir, "pdata", "1")
-    
-    # Skip if no pdata/1 folder
-    if not os.path.isdir(pdata_path):
-        print(f"Skipping {exp_dir}: pdata/1 folder not found")
-        continue
-    # Skip if no 1D spectrum file (1r)
-    if not any(fname.startswith("1r") for fname in os.listdir(pdata_path)):
-        print(f"Skipping {exp_dir}: no 1D spectrum found in {pdata_path}")
-        continue
+    traces_1H = None
+    traces_13C = None
 
-    try:
-        nucleus = detect_nucleus(exp_dir)
-    except Exception as e:
-        print(f"Skipping {exp_dir}: cannot read NUC1 ({e})")
-        continue
+    for exp_dir in exp_dirs:
+        pdata_path = os.path.join(exp_dir, "pdata", "1")
+        
+        # Skip if no pdata/1 folder
+        if not os.path.isdir(pdata_path):
+            print(f"Skipping {exp_dir}: pdata/1 folder not found")
+            continue
+        # Skip if no 1D spectrum file (1r)
+        if not any(fname.startswith("1r") for fname in os.listdir(pdata_path)):
+            print(f"Skipping {exp_dir}: no 1D spectrum found in {pdata_path}")
+            continue
 
-    exp_name = f"{os.path.basename(exp_dir)}_{nucleus.strip('<>')}"
+        try:
+            nucleus = detect_nucleus(exp_dir)
+        except Exception as e:
+            print(f"Skipping {exp_dir}: cannot read NUC1 ({e})")
+            continue
 
-    ppm, intensity = load_trace(pdata_path)
+        exp_name = f"{os.path.basename(exp_dir)}_{nucleus.strip('<>')}"
 
-    print(f"nucleus: {nucleus}")
+        ppm, intensity = load_trace(pdata_path)
 
-    # Initialize DataFrame with ppm axis
-    if traces_1H is None and nucleus == "1H":
-        traces_1H = pd.DataFrame({"ppm": ppm})
-    if traces_13C is None and nucleus == "13C":
-        traces_13C = pd.DataFrame({"ppm": ppm})
+        print(f"nucleus: {nucleus}")
 
-    # Add intensity column
-    if nucleus == "1H":
-        traces_1H[exp_name] = intensity
-    elif nucleus == "13C":
-        traces_13C[exp_name] = intensity
+        # Initialize DataFrame with ppm axis
+        if traces_1H is None and nucleus == "1H":
+            traces_1H = pd.DataFrame({"ppm": ppm})
+        if traces_13C is None and nucleus == "13C":
+            traces_13C = pd.DataFrame({"ppm": ppm})
 
-# --- Export ---
-if traces_1H is not None:
-    traces_1H.to_excel(os.path.join(base_dir, "traces_1H.xlsx"), index=False)
-if traces_13C is not None:
-    traces_13C.to_excel(os.path.join(base_dir, "traces_13C.xlsx"), index=False)
+        # Add intensity column
+        if nucleus == "1H":
+            traces_1H[exp_name] = intensity
+        elif nucleus == "13C":
+            traces_13C[exp_name] = intensity
 
-print("Done! 1H and 13C traces exported separately.")
+    # --- Export ---
+    if traces_1H is not None:
+        traces_1H.to_excel(os.path.join(base_dir, "traces_1H.xlsx"), index=False)
+    if traces_13C is not None:
+        traces_13C.to_excel(os.path.join(base_dir, "traces_13C.xlsx"), index=False)
+
+    print("Done! 1H and 13C traces exported separately.")
+
+if __name__ == "__main__":
+    main()

@@ -1,6 +1,7 @@
 import os, json
 import pandas as pd
 import numpy as np
+import pickle
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
@@ -38,9 +39,10 @@ plt.close('all')
 # input_stack = os.path.join(working_dir, "Data4_13CLeu1_1H.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
-working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
-input_stack = os.path.join(working_dir, "Data7_13CGlc1_1H.xlsx")
-input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+### 1H Glc experiments (11/3/2025)
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
+# input_stack = os.path.join(working_dir, "Data7_13CGlc1_1H.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
 ### 13C Glc product standards
 # working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards"
@@ -65,31 +67,58 @@ input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 # input_ref_peaks = os.path.join(working_dir, "cfg_1H.txt")
 # out_csv = os.path.join(working_dir, "peak_areas_leu1_lmfit.csv")
 
+# UGA HRMAS 10/31/2025 1H
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/UGA_HRMAS_10312025"
+# input_stack = os.path.join(working_dir, "spectra_1H.pkl")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+# UGA HRMAS 11/03/2025 1H
+working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/UGA_HRMAS_11032025"
+input_stack = os.path.join(working_dir, "spectra_1H.pkl")
+input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp_V2.txt")
+# UGA HRMAS 11/03/2025 13C
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/UGA_HRMAS_11032025"
+# input_stack = os.path.join(working_dir, "spectra_13C.pkl")
+# input_ref_peaks = os.path.join(working_dir, "cfg_13C_temp.txt")
+
 # for 1H
 # base_fit_window = 0.08
-base_fit_window = 0.04
-# base_fit_window = 4.0
+# base_fit_window = 0.04
+base_fit_window= 0.04
 # for 13C
 # base_fit_window =0.4
-# base_fit_window = 100
+# base_fit_window = 20
 prominence_factor = 0.1
 
 # Load data
 # def run_fit(working_dir, input_stack, input_ref_peaks, out_csv):
-df = pd.read_excel(input_stack, header=None)
-data = df.iloc[2:].reset_index(drop=True)
-data.columns = ['ppm'] + [f'trace_{i}' for i in range(1, df.shape[1])]
-data = data.astype(float)
+# df = pd.read_excel(input_stack, header=None)
+# data = df.iloc[2:].reset_index(drop=True)
+# data.columns = ['ppm'] + [f'trace_{i}' for i in range(1, df.shape[1])]
+# data = data.astype(float)
 
-ppm = data['ppm'].values
-traces = data.drop(columns='ppm').values
-n_traces = traces.shape[1]
-try:
-    real_times = df.iloc[1, 1:df.shape[0]].values.astype(float)
-except:
-    # standard solution, 102_13C
-    real_times = df.iloc[1, 1:df.shape[0]].values
-    real_times = np.array([s.split("_")[0] for s in real_times]).astype(float)
+with open(input_stack, "rb") as f:
+    spectra_dict = pickle.load(f)
+
+spectra_dict = {int(k.split("_")[0]): v for k, v in spectra_dict.items()}
+# UGA HRMAS 10/31/2025 1H
+# spectra_dict = {k: v for k, v in spectra_dict.items() if k >= 101}
+# spectra_dict = {k: v for k, v in spectra_dict.items() if (k-101) % 5 == 0}  # every 5th time point starting from 31
+# UGA HRMAS 11/03/2025 1H
+spectra_dict = {k: v for k, v in spectra_dict.items() if k >= 31}
+spectra_dict = {k: v for k, v in spectra_dict.items() if (k-31) % 5 == 0}  # every 5th time point starting from 31
+# UGA HRMAS 11/03/2025 13C
+# spectra_dict = {k: v for k, v in spectra_dict.items() if k >= 33 and k <= 233}
+# spectra_dict = {k: v for k, v in spectra_dict.items() if (k-33) % 5 == 0}  # every 5th time point starting from 31
+
+# ppm = data['ppm'].values
+# traces = data.drop(columns='ppm').values
+# n_traces = traces.shape[1]
+# try:
+#     real_times = df.iloc[1, 1:df.shape[0]].values.astype(float)
+# except:
+#     # standard solution, 102_13C
+#     real_times = df.iloc[1, 1:df.shape[0]].values
+#     real_times = np.array([s.split("_")[0] for s in real_times]).astype(float)
 
 ref_peaks = pd.read_csv(input_ref_peaks, sep="\t", header=None, names=["ppm", "label"], comment="#")
 
@@ -111,35 +140,37 @@ def make_json_serializable(obj):
 #     return np.pi * amplitude * sigma
 
 
-def plot_traces(data, ref_ppm, real_times, plot_title, base_fit_window=0.04):
-    ppm = data['ppm'].values
-    traces = data.drop(columns='ppm').values
-    n_traces = traces.shape[1]
+def plot_traces(spectra_dict, ref_ppm, plot_title, base_fit_window=0.04):
+    # Sort spectra by integer keys
+    spectra_items = sorted(spectra_dict.items(), key=lambda item: item[0])
+    n_traces = len(spectra_items)
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    nidxs = min(20, n_traces)  # number of evenly spaced traces
-    indices = np.linspace(0, n_traces-1, nidxs, dtype=int)
+    # Continuous color gradient over all traces
+    colormap = cm.viridis
+    colors = [colormap(i / (n_traces - 1)) for i in range(n_traces)]
 
-    # Choose a colormap
-    colormap = cm.viridis  # you can pick 'plasma', 'cividis', 'magma', etc.
-    colors = [colormap(i / (nidxs - 1)) for i in range(nidxs)]
+    for i, (name, spec) in enumerate(spectra_items):
+        ppm = spec["ppm"]
+        intensity = spec["intensity"]
 
-    for i, t in enumerate(indices):
-        y = traces[:, t]
+        # Mask around the reference peak
         mask = (ppm >= ref_ppm - base_fit_window) & (ppm <= ref_ppm + base_fit_window)
         x_data = ppm[mask]
-        y_data = y[mask]
-        # ax.plot(x_data, y_data, color=colors[i], label=f'Trace {t}')
-        ax.plot(x_data, y_data, color=colors[i], label=f'Trace {real_times[t]}')
+        y_data = intensity[mask]
+
+        ax.plot(x_data, y_data, color=colors[i], label=f"{name}")
 
     ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
     ax.set_xlabel("ppm")
     ax.set_ylabel("Intensity")
     ax.set_title(plot_title)
     ax.invert_xaxis()
+    fig.savefig(f"{plot_title}.pdf", dpi=300, bbox_inches="tight")
     plt.show(block=False)
 
+"""
 def plot_traces_colorbar(data, ref_ppm, real_times, plot_title, base_fit_window=0.04):
     ppm = data['ppm'].values
     traces = data.drop(columns='ppm').values
@@ -172,18 +203,22 @@ def plot_traces_colorbar(data, ref_ppm, real_times, plot_title, base_fit_window=
     ax.set_title(plot_title)
     ax.invert_xaxis()
     plt.show(block=False)
+"""
 
-def calculate_area(data, label, ref_ppm, t, real_times, exp_name="", base_fit_window=0.04, prominence_factor=0.1,
-                   init_bounds=None, seed=101):
+def calculate_area(data, label, ref_ppm, t, area_scaling_factor=1, real_times=None, exp_name="",
+                   base_fit_window=0.04, prominence_factor=0.1, init_bounds=None, seed=101):
     np.random.seed(seed)
 
-    ppm = data['ppm'].values
-    traces = data.drop(columns='ppm').values
+    # ppm = data['ppm'].values
+    # traces = data.drop(columns='ppm').values
+    ppm = np.array(data["ppm"])
+    y_data_full = np.array(data["intensity"])
 
-    y = traces[:, t]
+    # y = traces[:, t]
     mask = (ppm >= ref_ppm - base_fit_window) & (ppm <= ref_ppm + base_fit_window)
     x_data = ppm[mask]
-    y_data = y[mask]
+    # y_data = y[mask]
+    y_data = y_data_full[mask]
 
     # Ensure ascending ppm for lmfit
     if x_data[0] > x_data[-1]:
@@ -201,14 +236,19 @@ def calculate_area(data, label, ref_ppm, t, real_times, exp_name="", base_fit_wi
                                 init_bounds=init_bounds, seed=seed,
                                 prominence_factor=prominence_factor,
                                 base_fit_window=base_fit_window,
+                                area_scaling_factor=area_scaling_factor,
                                 savepath=nmr_fit_outfile)
 
     # add the trace index and experiment name to the saved state
     window_state["trace_index"] = int(t)
-    window_state["time"] = float(real_times[t])
+    if real_times is not None:
+        window_state["time"] = float(real_times[t])
+    else:
+        window_state["time"] = None
     window_state["experiment_name"] = exp_name
     window_state["reference_peak"] = float(ref_ppm)
     window_state["metabolite"] = label
+    window_state["scan_depth"] = len(ppm)
 
     # make this json serializable
     window_state_serializable = make_json_serializable(window_state)
@@ -229,13 +269,25 @@ for _, ref in ref_peaks.iterrows():
     print(f"{label} {ref_ppm}")
 
     # plot_traces_colorbar(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
-    plot_traces(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
+    
+    # plot_traces(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
+    plot_traces(spectra_dict, ref_ppm, plot_title=f"{label}_{ref_ppm}", base_fit_window = base_fit_window)
 
-    for t in range(n_traces):
+
+    # for t in range(n_traces):
+    base_scaling_factor = None
+    area_scaling_factor = 1
+    for i, (sample_name, spec) in enumerate(spectra_dict.items()):
+        if base_scaling_factor is None:
+            base_scaling_factor = len(spec["ppm"])
+        else:
+            area_scaling_factor = len(spec["ppm"]) / base_scaling_factor
         exp_name = os.path.splitext(os.path.basename(input_stack))[0]
-        json_outfile = f"nmr_fit_{exp_name}_{label}_{ref_ppm}_{t}.json"
+        # json_outfile = f"nmr_fit_{exp_name}_{label}_{ref_ppm}_{t}.json"
+        json_outfile = f"nmr_fit_{exp_name}_{label}_{ref_ppm}_{sample_name}.json"
         if os.path.exists(json_outfile):
-            print(f"Skipping trace {t}/{n_traces} for peak {label} at {ref_ppm} ppm in {exp_name}, already done.")
+            # print(f"Skipping trace {t}/{n_traces} for peak {label} at {ref_ppm} ppm in {exp_name}, already done.")
+            print(f"Skipping {sample_name} ({i+1}/{len(spectra_dict)}) for peak {label} at {ref_ppm} ppm — already done.")
             with open(json_outfile, "r") as f:
                 window_state = json.load(f)
             # results.extend(results_sub)
@@ -243,10 +295,14 @@ for _, ref in ref_peaks.iterrows():
             continue
         else:
             print("-" * 80)
-            print(f"Fitting trace {t}/{n_traces} for peak {label} at {ref_ppm} ppm in {exp_name}")
-            window_state = calculate_area(data=data, label=label, ref_ppm=ref_ppm, t=t, real_times=real_times,
-                                        exp_name = exp_name, base_fit_window=base_fit_window,
-                                        prominence_factor=prominence_factor, init_bounds=init_bounds, seed=101)
+            # print(f"Fitting trace {t}/{n_traces} for peak {label} at {ref_ppm} ppm in {exp_name}")
+            print(f"Fitting {sample_name} ({i+1}/{len(spectra_dict)}) for peak {label} at {ref_ppm} ppm")
+            ppm = spec["ppm"]
+            intensity = spec["intensity"]
+            window_state = calculate_area(data={"ppm": ppm, "intensity": intensity}, label=label, ref_ppm=ref_ppm,
+                                          t=sample_name, area_scaling_factor=area_scaling_factor,
+                                          real_times=None, exp_name = exp_name, base_fit_window=base_fit_window,
+                                          prominence_factor=prominence_factor, init_bounds=init_bounds, seed=101)
             init_bounds = (window_state["lower_ppm_bound"], window_state["upper_ppm_bound"])
             # results.extend(results_sub)
             print("-" * 80)

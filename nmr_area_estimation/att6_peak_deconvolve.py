@@ -1,4 +1,4 @@
-import os, json
+import os, json, random
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,7 +8,9 @@ from lmfit import Model
 from lmfit.models import LorentzianModel, VoigtModel, ConstantModel
 from scipy.signal import find_peaks
 from att5_peak_selector2_sliders import interactive_peak_selector
-from att6_deconv_stan_timeseries import run_nmr_model
+# from att6_deconv_stan_timeseries import run_nmr_model
+from att6_deconv2_EMMAP_timeseries2 import auto_init_from_mean
+from att6_deconv2_EMMAP_timeseries3 import *
 
 # Close any existing plots (this also helps recover from Ctrl-C in previous run)
 plt.close('all')
@@ -26,17 +28,17 @@ plt.close('all')
 # input_stack = os.path.join(working_dir, "Data9_13CGlc3_13C.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_13C_temp.txt")
 
-# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data4_13CLeu1"
-# input_stack = os.path.join(working_dir, "Data4_13CLeu1_1H.xlsx")
-# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data4_13CLeu1"
+input_stack = os.path.join(working_dir, "Data4_13CLeu1_1H.xlsx")
+input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
 # working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data5_13CLeu2"
 # input_stack = os.path.join(working_dir, "Data5_13CLeu2_1H.xlsx")
 # input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
-working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data6_13CLeu3"
-input_stack = os.path.join(working_dir, "Data6_13CLeu3_1H.xlsx")
-input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
+# working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data6_13CLeu3"
+# input_stack = os.path.join(working_dir, "Data6_13CLeu3_1H.xlsx")
+# input_ref_peaks = os.path.join(working_dir, "cfg_1H_temp.txt")
 
 # working_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Data7_13CGlc1"
 # input_stack = os.path.join(working_dir, "Data7_13CGlc1_1H.xlsx")
@@ -231,16 +233,144 @@ ref_ppm = ref['ppm']
 label = ref['label']
 print(f"{label} {ref_ppm}")
 
-plot_traces_colorbar(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
+# plot_traces_colorbar(data, ref_ppm, real_times, plot_title=f"{label} {ref_ppm}", base_fit_window = base_fit_window)
 
 ppm = data['ppm'].values
 traces = data.drop(columns='ppm').values
 
 # y = traces[:, t]
-mask = (ppm >= ref_ppm - base_fit_window) & (ppm <= ref_ppm + base_fit_window)
+# mask = (ppm >= ref_ppm - base_fit_window) & (ppm <= ref_ppm + base_fit_window)
+
+# Normally, you would refine the mask using the interface
+# For now, just hard-code the refined mask
+# Leu1
+mask = (ppm >= 0.82) & (ppm <= 0.87)
 x_data = ppm[mask]
 y_data = traces[mask, :] # ppm x time point
 
+seed=104 # 104 n_peaks = 6, 102 n_peaks=6, 102 n_peaks=10
+n_peaks = 6
+np.random.seed(seed)
+random.seed(seed)
+
+# initialize (from mean)
+centers0, gammas0 = auto_init_from_mean(x=x_data, Y=y_data, n_peaks=n_peaks, gamma_guess=0.005)
+centers0 += np.random.normal(0, 0.01, size=centers0.shape)  # jitter
+gammas0 *= 1.1
+
+# test EM MAP solution across all time points
+"""
+# lambda_a = 1e-4
+centers, gammas, amps_est, baselines_est, history = (
+    em_map_deconvolution(x = x_data,
+                        Y = y_data,
+                        K_init = None,
+                        centers_init = centers0,
+                        gammas_init = gammas0,
+                        n_iter=20,
+                        lambda_a=1e-3, a_prior=None,
+                        lambda_mu=0.0, mu_prior=None,
+                        lambda_gamma=1e-3, gamma_prior=0.01,
+                        nonneg=True,
+                        verbose=True)
+)
+"""
+# x, Y defined earlier
+centers, gammas, pis, Ss, bs, history = em_softmax_mixture_shapes(
+    x = x_data, Y = y_data, centers0 = centers0, gammas0 = gammas0, n_iter=20,
+    lambda_pi=1e-5, pi_prior=np.ones(len(centers0))/len(centers0),
+    lambda_mu=1e-6, lambda_gamma=1e-6,
+    bounds_logS=(-10,10), bounds_b=(-0.05,0.05),
+    verbose=True
+)
+
+
+# visualize with wide mask
+mask = (ppm >= ref_ppm - base_fit_window) & (ppm <= ref_ppm + base_fit_window)
+x = ppm[mask]
+Y = traces[mask, :] # ppm x time point
+K_final = build_K(x, centers, gammas)
+"""
+for ti in [0, 36, 10, 20, 30]:
+    # reconstruct spectrum
+    recon = K_final @ amps_est[:, ti] + baselines_est[ti]
+    
+    plt.figure(figsize=(8,4))
+    plt.plot(x, Y[:, ti], label=f'data t={ti}')
+    plt.plot(x, recon, label='recon', lw=2)
+    
+    # plot each component contribution
+    for i in range(K_final.shape[1]):
+        plt.plot(x, amps_est[i, ti] * K_final[:, i], '--', label=f'comp{i}')
+    
+    plt.legend()
+    plt.gca().invert_xaxis()
+    plt.show()
+"""
+for ti in [0, 36, 10, 20, 30]:
+    # compute component amplitudes from softmax mixture
+    amps = Ss[ti] * pis[:, ti]   # shape (n_components,)
+    
+    # full reconstruction
+    recon = K_final @ amps + bs[ti]
+    
+    plt.figure(figsize=(8,4))
+    plt.plot(x, Y[:, ti], label=f'data t={ti}')
+    plt.plot(x, recon, label='recon', lw=2)
+    
+    # individual component contributions
+    for i in range(K_final.shape[1]):
+        plt.plot(x, amps[i] * K_final[:, i], '--', label=f'comp{i}')
+    
+    plt.legend()
+    plt.gca().invert_xaxis()
+    plt.show()
+
+
+
+
+# print errors across iterations
+errors = [h["err"] for h in history]
+plt.plot(errors, marker="o")
+plt.xlabel("Iteration")
+plt.ylabel("Error")
+plt.title("Error over iterations")
+plt.show()
+
+# print amplitudes across time
+"""
+times = np.arange(amps_est.shape[1])  # or your actual time values
+plt.figure(figsize=(8,5))
+
+for i in range(amps_est.shape[0]):
+    plt.plot(times, amps_est[i, :], label=f'Comp {i}')
+
+plt.xlabel("Time")
+plt.ylabel("Amplitude")
+plt.title("Component amplitudes across time")
+plt.legend()
+plt.show()
+"""
+# Suppose pis has shape (K, n_times)
+# and times is an array of timepoints (n_times,)
+K, n_times = pis.shape
+times = np.arange(n_times)  # replace with your actual time values
+
+plt.figure(figsize=(8, 5))
+for k in range(K):
+    plt.plot(times, pis[k, :], marker="o", label=f"Peak {k}")
+
+plt.xlabel("Time")
+plt.ylabel("Mixture weight (π)")
+plt.title("Lorentzian mixture weights over time")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# -----
+
+"""
 exp_name = os.path.splitext(os.path.basename(input_stack))[0]
 t_final = y_data.shape[1] - 1
 window_states = []
@@ -269,6 +399,11 @@ Y = y_data.transpose()
 ppm = x_data
 first_fit = window_states[0]
 last_fit = window_states[-1]
+"""
+
+
+
+
 
 """
 run_nmr_model(Y = y_data.transpose(),

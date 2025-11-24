@@ -1,11 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, TextBox
-from lmfit.models import LorentzianModel, ConstantModel
+from lmfit.models import LorentzianModel, VoigtModel, PseudoVoigtModel, ConstantModel
 from scipy.signal import find_peaks
 
 def interactive_peak_selector(x_data, y_data, ref_ppm, label,
                              prominence_factor=0.05, base_fit_window=0.04,
+                             area_scaling_factor=1.0,
                              init_bounds=None, seed=101, savepath=None):
     """
     Interactive viewer with sliders for defining a region and a button
@@ -109,7 +110,9 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
         composite_model = None
         for i in range(n_peaks):
             prefix = f"p{i}_"
-            model = LorentzianModel(prefix=prefix)
+            # model = LorentzianModel(prefix=prefix)
+            # model = VoigtModel(prefix=prefix)
+            model = PseudoVoigtModel(prefix=prefix)
             composite_model = model if composite_model is None else composite_model + model
 
         baseline = ConstantModel(prefix="bkg_")
@@ -138,6 +141,11 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
             sigma_guess = 0.005 * np.random.uniform(0.8, 1.2)
             params[prefix + "sigma"].set(value=sigma_guess, min=0.001, max=0.03)
 
+            # Add gamma for Voigt
+            # params[prefix + "gamma"].set(value=sigma_guess, min=0.001, max=0.03)
+            # Add fraction for PseudoVoigt
+            params[prefix + 'fraction'].set(value=0.5, min=0, max=1)
+
         params["bkg_c"].set(value=y_sub.min(),
                             min=y_sub.min()*0.5, max=y_sub.max()*0.5)
 
@@ -155,7 +163,9 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
             component_params.append({
                 "amplitude": result.params[prefix+"amplitude"].value,
                 "center": result.params[prefix+"center"].value,
-                "sigma": result.params[prefix+"sigma"].value
+                "sigma": result.params[prefix+"sigma"].value,
+                "fraction": result.params[prefix+"fraction"].value
+                # "gamma": result.params[prefix+"gamma"].value
             })
 
         baseline_array = np.full_like(x_sub, result.params["bkg_c"].value)
@@ -217,6 +227,8 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
                 total_area += np.trapz(comp[inner_mask], x_sub[inner_mask])
         window_state["total_area"] = total_area
         print(f"Total area under fitted curve: {total_area}")
+        # window_state["total_area"] = total_area / area_scaling_factor
+        # print(f"Total area under fitted curve: {total_area}, scaling factor: {area_scaling_factor}")
 
 
         # --- build composite curve of included peaks only ---

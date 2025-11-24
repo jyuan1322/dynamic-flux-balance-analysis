@@ -93,46 +93,59 @@ def plot_rel(x, y, xlabel, ylabel):
     
     plt.show()
 
-def plot_rel_color(x, y, xlabel, ylabel, c=None, cmap="viridis"):
-    # Convert to NumPy arrays in case they aren't
+def plot_rel_color(x, y, xlabel, ylabel, c=None, cmap="viridis", fit_intercept=True):
+    # Convert to NumPy arrays
     x = np.array(x)
     y = np.array(y)
     if c is not None:
         c = np.array(c)
 
-    # Remove NaN and inf values (apply mask to c as well if given)
+    # Remove NaN and inf
     mask = np.isfinite(x) & np.isfinite(y)
     if c is not None:
-        mask = mask & np.isfinite(c)
+        mask &= np.isfinite(c)
 
     x_clean = x[mask]
     y_clean = y[mask]
     c_clean = c[mask] if c is not None else None
 
-    # Compute linear regression
-    slope, intercept, r_value, p_value, std_err = linregress(x_clean, y_clean)
+    # --- Linear regression ---
+    if fit_intercept:
+        # Regular regression with intercept
+        slope, intercept, r_value, p_value, std_err = linregress(x_clean, y_clean)
+    else:
+        # Fit without intercept: y = a*x
+        slope = np.sum(x_clean * y_clean) / np.sum(x_clean ** 2)
+        intercept = 0.0
+        # Compute r^2 manually
+        y_pred = slope * x_clean
+        ss_res = np.sum((y_clean - y_pred)**2)
+        ss_tot = np.sum((y_clean - np.mean(y_clean))**2)
+        r_value = np.sqrt(1 - ss_res / ss_tot)
+
     y_fit = slope * x_clean + intercept
 
-    # Plot with optional coloring
+    # --- Plot ---
     sc = plt.scatter(x_clean, y_clean, c=c_clean, cmap=cmap)
     plt.plot(x_clean, y_fit, color='red')
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
 
-    # Add colorbar if c was provided
     if c is not None:
         plt.colorbar(sc, label="Magnitude")
 
-    # Add trendline equation and R^2
     plt.text(
         0.05, 0.95,
-        f"y={slope:.3f}x+{intercept:.3f}\\n$R^2$={r_value**2:.3f}",
+        f"y={slope:.3f}x{'' if fit_intercept else ''}"
+        + (f"+{intercept:.3f}" if fit_intercept else "")
+        + f"\n$R^2$={r_value**2:.3f}",
         transform=plt.gca().transAxes,
         fontsize=12,
         verticalalignment='top'
     )
 
     plt.show()
+
 
 
 
@@ -250,27 +263,27 @@ merged.to_csv("standard_regression_plots_1H.csv", index=False)
 plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Acetate_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Acetate]/Peak Area mMol/a.u.",
-                c=merged["13C_Acetate"])
+                c=merged["13C_Acetate"], fit_intercept=False)
 
 plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Alanine_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Alanine]/Peak Area mMol/a.u.",
-                c=merged["13C_Alanine"])
+                c=merged["13C_Alanine"], fit_intercept=False)
 
 plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Alanine2_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Alanine2]/Peak Area mMol/a.u.",
-                c=merged["13C_Alanine2"])
+                c=merged["13C_Alanine2"], fit_intercept=False)
 
 plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Butyrate_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Butyrate]/Peak Area mMol/a.u.",
-                c=merged["13C_Butyrate"])
+                c=merged["13C_Butyrate"], fit_intercept=False)
 
 plot_rel_color(merged["13C_Glucose_ratio"], merged["13C_Ethanol_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Ethanol]/Peak Area mMol/a.u.",
-                c=merged["13C_Ethanol"])
+                c=merged["13C_Ethanol"], fit_intercept=False)
 
 
 plot_rel_color(merged["13C_Glucose_mMol"], merged["13C_Glucose"],

@@ -10,18 +10,25 @@ import numpy as np
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data9_13CGlc3"
 
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1_1H"
+input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1_1H_V2"
+
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/UGA_HRMAS_10312025"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/UGA_HRMAS_11032025"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/UGA_HRMAS_11032025_1H_V2"
 
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data1_13CPro1"
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data2_13CPro2"
-input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data3_13CPro3"
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data3_13CPro3"
 
 # exp_name = "Data7_13CGlc1_13C"
 # exp_name = "Data8_13CGlc2_13C"
 # exp_name = "Data9_13CGlc3_13C"
+# exp_name = "Data7_13CGlc1_1H"
+exp_name = "spectra_1H"
 
 # exp_name = "Data1_13CPro1_1H"
 # exp_name = "Data2_13CPro2_1H"
-exp_name = "Data3_13CPro3_1H"
+# exp_name = "Data3_13CPro3_1H"
 
 # def scale_to_mMol(df):
 #     df = df.copy()
@@ -66,11 +73,36 @@ df = df[df["experiment_name"] == exp_name]
 print(df.head())
 print(len(df), "rows loaded")
 
+if df['time'].isna().any():
+    df['time'] = df['trace_index']
+
+
 df_grouped = df.pivot(index="metabolite", columns="time", values="total_area")
 df_grouped = df_grouped.T
 df_grouped = df_grouped.reset_index().rename(columns={"time": "Time"})
 
 # scale_to_mMol = True
+
+# UGA HRMAS 10/31/2025, 11/03/2025
+if exp_name in ["spectra_1H"]:
+df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 0.5
+df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 1.5
+df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 1.5
+df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 1.5
+df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 1.5
+# correct for increase in number of scans
+# 10/31/2025
+# cols_to_half = ['13C_Glucose', '13C_Acetate', '13C_Butyrate']
+# df_grouped.loc[df_grouped['Time'] >= 206, cols_to_half] = df_grouped.loc[df_grouped['Time'] >= 206, cols_to_half] / 2
+# 11/03/2025
+df_grouped = df_grouped[df_grouped['Time'] <= 223]
+cols_to_half = ['13C_Glucose', '13C_Acetate', '13C_Butyrate', '13C_Alanine', '13C_Ethanol']
+df_grouped.loc[df_grouped['Time'] >= 131, cols_to_half] = df_grouped.loc[df_grouped['Time'] >= 131, cols_to_half] / 2
+# remove the first and last time point (not aligned)
+tmin = df_grouped["Time"].min()
+tmax = df_grouped["Time"].max()
+df_grouped = df_grouped[(df_grouped["Time"] != tmin) & (df_grouped["Time"] != tmax)]
+
 
 if exp_name in ["Data7_13CGlc1_13C"]:
     df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 4.0
@@ -80,7 +112,8 @@ if exp_name in ["Data7_13CGlc1_13C"]:
     df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 2.0
     df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 2.0
     df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 2.0
-    # if scale_to_mMol:
+    # assume glucose is consumed: set the min value to 0
+    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] - df_grouped["13C_Glucose"].min()
 elif exp_name in ["Data8_13CGlc2_13C", "Data9_13CGlc3_13C"]:
     df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 4.0
     df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 2.0
@@ -89,39 +122,149 @@ elif exp_name in ["Data8_13CGlc2_13C", "Data9_13CGlc3_13C"]:
     df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 2.0
     df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 2.0
     # df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 2.0
+    # assume glucose is consumed: set the min value to 0
+    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] - df_grouped["13C_Glucose"].min()
 elif exp_name in ["Data7_13CGlc1_1H"]:
     df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 2.0
-    df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 1.0
+    df_grouped["13C_Alanine"] = df_grouped["13C_Alanine2"] / 1.0
     df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 4.0
-    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 1.0
-    df_grouped["13C_butyrate"] = df_grouped["13C_butyrate"] / 3.0
-    df_grouped["13C_mButanol"] = df_grouped["13C_mButanol"] / 3.0
-    df_grouped["2-aminobutyrate"] = df_grouped["2-aminobutyrate"] / 3.0
+    # df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 1.0
+    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 0.5
+    df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 3.0
+    # df_grouped["13C_mButanol"] = df_grouped["13C_mButanol"] / 3.0
+    # df_grouped["2-aminobutyrate"] = df_grouped["2-aminobutyrate"] / 3.0
     df_grouped["5-aminovalerate"] = df_grouped["5-aminovalerate"] / 3.0
     df_grouped["Arginine"] = df_grouped["Arginine"] / 3.0
-    df_grouped["Formate"] = df_grouped["Formate"] / 1.0
-    df_grouped["Isobutyrate"] = df_grouped["Isobutyrate"] / 4.0
+    # df_grouped["Formate"] = df_grouped["Formate"] / 1.0
+    # df_grouped["Isobutyrate"] = df_grouped["Isobutyrate"] / 4.0
     df_grouped["Isocaproate"] = df_grouped["Isocaproate"] / 3.0
     df_grouped["Leucine"] = df_grouped["Leucine"] / 4.0
     df_grouped["Methionine"] = df_grouped["Methionine"] / 1.0
     df_grouped["Proline"] = df_grouped["Proline"] / 3.0
     df_grouped["Threonine"] = df_grouped["Threonine"] / 2.0
     df_grouped["Tryptophan"] = df_grouped["Tryptophan"] / 2.0
-elif exp_name in ["Data1_13CPro1_1H", "Data2_13CPro2_1H", "Data3_13CPro3_1H"]:
-    # proline: 1 peak
-    # 5AV: 1 peak
+elif exp_name in ["Data1_13CPro1_1H", "Data2_13CPro2_1H", "Data3_13CPro3_1H", "Data7_13CGlc1_1H"]:
+    # # proline: 1 peak
+    # # 5AV: 1 peak
+    # proline_initial_conc = 6.96 # mMol
+    # fiveAV_final_conc = proline_initial_conc
+    # # scale proline to initial conc
+    # initial_n_values_to_ave = 5
+    # initial_pro_val = np.mean(df_grouped["Proline"][:initial_n_values_to_ave])
+    # df_grouped["Proline"] = df_grouped["Proline"] / initial_pro_val * proline_initial_conc
+    # final_n_values_to_ave = 10
+    # final_5AV_val = np.mean(df_grouped["5-aminovalerate"][-(final_n_values_to_ave+1):-1])
+    # df_grouped["5-aminovalerate"] = df_grouped["5-aminovalerate"] / final_5AV_val * fiveAV_final_conc
+
+    # glucose data7
+    # >>> metabolites
+    # ['13C_Acetate', '13C_Alanine2', '13C_Butyrate', '13C_Ethanol', 
+    # '13C_Glucose', '5-aminovalerate', 'Arginine', 'Histidine', 
+    # 'Isocaproate', 'Leucine', 'Methionine', 'Proline', 'Threonine', 'Tryptophan']
+    initial_n_values_to_ave = 1
+    final_n_values_to_ave = 10
+
     proline_initial_conc = 6.96 # mMol
-    fiveAV_final_conc = proline_initial_conc
-    # scale proline to initial conc
-    initial_n_values_to_ave = 5
     initial_pro_val = np.mean(df_grouped["Proline"][:initial_n_values_to_ave])
     df_grouped["Proline"] = df_grouped["Proline"] / initial_pro_val * proline_initial_conc
-    final_n_values_to_ave = 10
+
+    fiveAV_final_conc = proline_initial_conc
     final_5AV_val = np.mean(df_grouped["5-aminovalerate"][-(final_n_values_to_ave+1):-1])
     df_grouped["5-aminovalerate"] = df_grouped["5-aminovalerate"] / final_5AV_val * fiveAV_final_conc
-    pass
-else:
-    raise ValueError(f"Unknown exp_name {exp_name}")
+
+    # scale to initial conc
+    glucose_initial_conc = 27.5
+    initial_val = np.mean(df_grouped["13C_Glucose"][:initial_n_values_to_ave])
+    glucose_initial_area = initial_val # store this for ratio scaling later
+    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / initial_val * glucose_initial_conc
+    tryptophan_initial_conc = 0.49
+    initial_val = np.mean(df_grouped["Tryptophan"][:initial_n_values_to_ave])
+    df_grouped["Tryptophan"] = df_grouped["Tryptophan"] / initial_val * tryptophan_initial_conc
+    leucine_initial_conc = 7.63
+    initial_val = np.mean(df_grouped["Leucine"][:initial_n_values_to_ave])
+    df_grouped["Leucine"] = df_grouped["Leucine"] / initial_val * leucine_initial_conc
+    # methionine starts at 0: pick the first nonzero value
+    methionine_initial_conc = 1.34
+    # initial_val = np.mean(df_grouped["Methionine"][:initial_n_values_to_ave])
+    initial_val = df_grouped["Methionine"][df_grouped["Methionine"] > 0].iloc[0]
+    df_grouped["Methionine"] = df_grouped["Methionine"] / initial_val * methionine_initial_conc
+    histidine_initial_conc = 0.65
+    initial_val = np.mean(df_grouped["Histidine"][:initial_n_values_to_ave])
+    df_grouped["Histidine"] = df_grouped["Histidine"] / initial_val * histidine_initial_conc
+    arginine_initial_conc = 1.15
+    initial_val = np.mean(df_grouped["Arginine"][:initial_n_values_to_ave])
+    df_grouped["Arginine"] = df_grouped["Arginine"] / initial_val * arginine_initial_conc
+    threonine_initial_conc = 1.68
+    initial_val = np.mean(df_grouped["Threonine"][:initial_n_values_to_ave])
+    df_grouped["Threonine"] = df_grouped["Threonine"] / initial_val * threonine_initial_conc
+
+    # scale as fraction of reactant
+    # Supp Table 12
+    # Isobutyrate | 1.387 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
+    # Isocaproate | 5.168 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
+    # [Isovalerate missing NMR] 2.994 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
+    # for now, assume leucine consumed = initial leucine
+    isocaproate_final_conc = 5.168 / (2.944 + 5.168 + 1.387) * leucine_initial_conc
+    final_val = np.mean(df_grouped["Isocaproate"][-(final_n_values_to_ave+1):-1])
+    df_grouped["Isocaproate"] = df_grouped["Isocaproate"] / final_val * isocaproate_final_conc
+
+    # scale from standard concentration ratios
+    # 13C_butyrate | 5.487 * [Glc] * (Product final area) / (Glc initial area)
+    # 13C_Acetate | 3.521 * [Glc] * (Product final area) / (Glc initial area)
+    # 13C_Alanine | 8.603 * [Glc] * (Product final area) / (Glc initial area)
+    # 13C_Ethanol | 7.663 * [Glc] * (Product final area) / (Glc initial area)
+    # for now, assume glucose consumed = initial glucose
+    
+    # df_grouped["13C_Butyrate"] = glucose_initial_conc / glucose_initial_area * \
+    #                                 df_grouped["13C_Butyrate"] * 5.487
+    # 
+    # final_val = np.mean(df_grouped["13C_Acetate"][-(final_n_values_to_ave+1):-1])
+    # final_area = 3.521 * glucose_initial_conc * final_val / glucose_initial_area
+    # df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / final_val * final_area
+    # 
+    # final_val = np.mean(df_grouped["13C_Alanine2"][-(final_n_values_to_ave+1):-1])
+    # final_area = 8.603 * glucose_initial_conc * final_val / glucose_initial_area
+    # df_grouped["13C_Alanine2"] = df_grouped["13C_Alanine2"] / final_val * final_area
+    # 
+    # final_val = np.mean(df_grouped["13C_Ethanol"][-(final_n_values_to_ave+1):-1])
+    # final_area = 7.663 * glucose_initial_conc * final_val / glucose_initial_area
+    # df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / final_val * final_area
+
+    df_grouped["13C_Butyrate"] = glucose_initial_conc / glucose_initial_area * \
+                                    df_grouped["13C_Butyrate"] * 3.554
+
+    final_val = np.mean(df_grouped["13C_Acetate"][-(final_n_values_to_ave+1):-1])
+    final_area = 2.102 * glucose_initial_conc * final_val / glucose_initial_area
+    df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / final_val * final_area
+
+    final_val = np.mean(df_grouped["13C_Alanine2"][-(final_n_values_to_ave+1):-1])
+    final_area = 5.421 * glucose_initial_conc * final_val / glucose_initial_area
+    df_grouped["13C_Alanine2"] = df_grouped["13C_Alanine2"] / final_val * final_area
+
+    final_val = np.mean(df_grouped["13C_Ethanol"][-(final_n_values_to_ave+1):-1])
+    final_area = 4.703 * glucose_initial_conc * final_val / glucose_initial_area
+    df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / final_val * final_area
+
+import matplotlib.pyplot as plt
+plt.figure(figsize=(8,5))
+for col in ["13C_Glucose", "13C_Acetate", "13C_Alanine2", "13C_Butyrate", "13C_Ethanol"]:
+    plt.plot(df_grouped["Time"], df_grouped[col], label=col)
+
+plt.xlabel("Time")
+plt.ylabel("Concentration (mMol)")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+    else:
+        raise ValueError(f"Unknown exp_name {exp_name}")
+
+# write concentrations scaled by proton number
+df_grouped.to_csv(os.path.join(input_dir, f"{exp_name}_scaled_areas_10202025.csv"), index=False)
+
+
+
 
 import os, pickle
 import cobra as cb
@@ -331,8 +474,14 @@ logistic_df_ile, corrected_times_ile, scaled_concs_ile = logistic_inference(df_g
                                                                 exp_id="test_glc1H")
 plot_logistic_fit(logistic_df_ile, corrected_times_ile, scaled_concs_ile, target_col="Valine")
 """
-
-
+logistic_df_glc, corrected_times_glc, scaled_concs_glc = logistic_inference(df_grouped,
+                                                                target_col="13C_Glucose",
+                                                                exp_id="spectra_1H")
+plot_logistic_fit(logistic_df_glc, corrected_times_glc, scaled_concs_glc, target_col="13C_Glucose")
+logistic_df_glc, corrected_times_glc, scaled_concs_glc = logistic_inference(df_grouped,
+                                                                target_col="13C_Butyrate",
+                                                                exp_id="spectra_1H")
+plot_logistic_fit(logistic_df_glc, corrected_times_glc, scaled_concs_glc, target_col="13C_Butyrate")
 
 
 
@@ -358,6 +507,10 @@ def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_c
 
     # Original data
     ax1.scatter(corrected_times, scaled_concs, color=color, s=16, label='_nolegend_')
+    logistic_pred_lists = [corrected_times, y_mean, lower, upper]
+    logistic_pred_cols = [f"{target_col}_times", f"{target_col}_mean", f"{target_col}_lower", f"{target_col}_upper"]
+    logistic_pred_df = pd.DataFrame(dict(zip(logistic_pred_cols, logistic_pred_lists)))
+    return logistic_pred_df
 
 # metabolites = ["Formate", "Isobutyrate", "Isoleucine", "Valine"]
 # metabolites = ["13C_butyrate", "2-aminobutyrate", "Isobutyrate", "Threonine"]
@@ -370,19 +523,30 @@ import matplotlib as mpl
 cmap = mpl.colormaps['tab20'].resampled(len(metabolites))
 
 # Access the list of colors from the colormap object
-colors = cmap.colors
+# colors = cmap.colors
+# revert to default colors
+colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
 # colors = ["darkorange", "royalblue", "green", "purple"]
 # fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
 fig, ax1 = plt.subplots(1, 1, figsize=(10, 8), sharex=True)
-
+# metabs_a = ["Isocaproate", "13C_Acetate", "13C_Alanine2", "13C_Ethanol", "13C_Butyrate",
+#             "5-aminovalerate", "Arginine", "Leucine"]
+# metabs_b = list(set(metabolites) - set(metabs_a))
+# for i, target_col in enumerate(metabs_b):
+all_logistic_preds = None
 for i, target_col in enumerate(metabolites):
     print('-'*40)
     print(target_col)
     logistic_df, corrected_times, scaled_concs = logistic_inference(df_grouped,
                                                                 target_col=target_col,
                                                                 exp_id="test_glc1H")
-    plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_col, color=colors[i])
+    logistic_pred_df = plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_col, color=colors[i])
+    # Combine with previous results like cbind
+    if all_logistic_preds is None:
+        all_logistic_preds = logistic_pred_df
+    else:
+        all_logistic_preds = pd.concat([all_logistic_preds, logistic_pred_df], axis=1)
 
 # Common labels and legend
 # ax2.set_xlabel('Time (hours)')
@@ -397,3 +561,18 @@ plt.tight_layout()
 output_trajct_fname = f"logistic_fits_{exp_name}.pdf"
 plt.savefig(os.path.join(input_dir, output_trajct_fname))
 plt.show()
+
+
+# scale logistic functions to actual mMol concentrations
+cols = [col for col in all_logistic_preds.columns if col.endswith("_times")]
+# if all time columns are the same, we can just keep one
+if not all(all_logistic_preds[cols[0]].equals(all_logistic_preds[col]) for col in cols[1:]):
+    raise ValueError("Not all columns have identical values")
+# Create a single new column (you can choose a better name)
+all_logistic_preds['corrected_times'] = all_logistic_preds[cols[0]]
+
+# Drop the original duplicate columns
+all_logistic_preds = all_logistic_preds.drop(columns=cols)
+
+all_logistic_preds.to_csv(os.path.join(input_dir,
+                          f"logistic_bounds_pre_conc_scaling_{exp_name}_10202025.csv"), index=False)

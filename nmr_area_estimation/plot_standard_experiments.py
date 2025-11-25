@@ -2,18 +2,29 @@ import os
 import json
 import numpy as np
 import pandas as pd
+import configparser
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
 
-input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data_Standards_13C"
+config = configparser.ConfigParser()
+config.optionxform = str   # <-- turn off lowercasing
+config.read("plot_standard_experiments_1H.ini")
+
+# base_dir = config["paths"]["base_dir"]
+# output_dir = config["paths"]["output_dir"]
+# threshold = float(config["params"]["threshold"])
+# max_iter = int(config["params"]["max_iter"])
+
+# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data_Standards_13C"
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data8_13CGlc2"
 # input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data9_13CGlc3"
+input_dir = config["paths"]["input_dir"]
 
-# input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data9_13CGlc3"
+# exp_name = "traces_13C_annot"
+exp_name = config["params"]["exp_name"]
 
-exp_name = "traces_13C_annot"
-
-ref_concs = pd.read_csv("/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards/combined_concentrations.csv")
+# ref_concs = pd.read_csv("/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/20220325_13CGlc_Standards/combined_concentrations.csv")
+ref_concs = pd.read_csv(config["paths"]["ref_concs"])
 ref_concs.columns = ["Time"] + ["13C_" + col + "_mMol" for col in ref_concs.columns[1:]]
 
 records = []
@@ -36,30 +47,41 @@ df = df[df["experiment_name"] == exp_name]
 df_grouped = df.pivot(index="metabolite", columns="time", values="total_area")
 df_grouped = df_grouped.T
 df_grouped = df_grouped.reset_index().rename(columns={"time": "Time"})
+# filter out certain Times / fids
+if "filter" in config and "ignore_times" in config["filter"]:
+    ignore_times = [ int(x.strip()) for x in config["filter"]["ignore_times"].split(",") ]
+    df_grouped = df_grouped[~df_grouped["Time"].isin(ignore_times)]
 
-df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 4.0
-df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 2.0
-df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 2.0
-df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 2.0
-df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 2.0
+# scale NMR areas by proton number
+# df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 4.0
+# df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 2.0
+# df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 2.0
+# df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 2.0
+# df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 2.0
+proton_num = {k: float(v) for k, v in config["proton_num"].items()}
+for metabolite, scale_factor in proton_num.items():
+    df_grouped[metabolite] = df_grouped[metabolite] / scale_factor
 
 merged = pd.merge(df_grouped, ref_concs, on='Time')
 
 
 # Add acquisition time rescale from Xi
-acqus_times = {3:np.nan, 12:4096, 22:1024, 32:1024, 42:2048, 52:1024, 62:1024,
-               72:1024, 82:1024, 92:4096, 102:1024, 112:4096, 122:1024}
-acqus_times = pd.DataFrame(list(acqus_times.items()), columns=["Time", "Acqus_Time"])
-merged = merged.merge(acqus_times, on="Time", how="left")
-# remove entries without Acqus_Time
-merged = merged[~merged["Acqus_Time"].isna()]
+# For now, removing this because it doesn't successfully correct for conc vs area trend
+# acqus_times = {3:np.nan, 12:4096, 22:1024, 32:1024, 42:2048, 52:1024, 62:1024,
+#                72:1024, 82:1024, 92:4096, 102:1024, 112:4096, 122:1024}
+# acqus_times = pd.DataFrame(list(acqus_times.items()), columns=["Time", "Acqus_Time"])
+# merged = merged.merge(acqus_times, on="Time", how="left")
+# # remove entries without Acqus_Time
+# merged = merged[~merged["Acqus_Time"].isna()]
 
-metab_list = ["13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_Ethanol"]
+# metab_list = ["13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_Ethanol"]
+metab_list = list(proton_num.keys())
 for metab in metab_list:
     # rescale by Acqus_Time
     # merged[metab] = merged[metab] / merged["Acqus_Time"]
     # calculate ratio
-    merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
+    # merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
+    merged[f"{metab}_ratio"] = merged[f"{metab}_mMol"] / merged[metab]
 
 
 def plot_rel(x, y, xlabel, ylabel):
@@ -93,7 +115,7 @@ def plot_rel(x, y, xlabel, ylabel):
     
     plt.show()
 
-def plot_rel_color(x, y, xlabel, ylabel, c=None, cmap="viridis", fit_intercept=True):
+def plot_rel_color(x, y, xlabel, ylabel, title=None, c=None, cmap="viridis", fit_intercept=True):
     # Convert to NumPy arrays
     x = np.array(x)
     y = np.array(y)
@@ -136,22 +158,49 @@ def plot_rel_color(x, y, xlabel, ylabel, c=None, cmap="viridis", fit_intercept=T
 
     plt.text(
         0.05, 0.95,
-        f"y={slope:.3f}x{'' if fit_intercept else ''}"
+        f"y={slope:.3f}x"
         + (f"+{intercept:.3f}" if fit_intercept else "")
         + f"\n$R^2$={r_value**2:.3f}",
         transform=plt.gca().transAxes,
         fontsize=12,
         verticalalignment='top'
     )
+    if title is not None:
+        plt.title(title)
 
     plt.show()
+    return slope, intercept, r_value**2
 
 
 
 
 
-merged.to_csv("standard_regression_plots_13C.csv", index=False)
+# merged.to_csv("standard_regression_plots_13C.csv", index=False)
+merged.to_csv(config["paths"]["output_merged_table"], index=False)
 
+anchor_metab = config["ratio_method"]["anchor_metab"].strip()
+target_metabs = [ x.strip() for x in config["ratio_method"]["target_metabs"].split(",") ]
+
+a_slope_table = []   # list of dicts
+for target_metab in target_metabs:
+    slope, intercept, r2 = plot_rel_color(merged[f"{anchor_metab}_ratio"], 
+                                          merged[f"{target_metab}_ratio"],
+                                          xlabel=f"[{anchor_metab}]/Peak Area [mMol/a.u.]",
+                                          ylabel=f"[{target_metab}]/Peak Area [mMol/a.u.]",
+                                          title=f"{target_metab} Standard Curve",
+                                          c=merged[target_metab], fit_intercept=False)
+    a_slope_table.append({
+        "anchor": anchor_metab,
+        "target": target_metab,
+        "slope": slope,
+        "intercept": intercept,
+        "r_squared": r2
+    })
+
+a_slope_table = pd.DataFrame(a_slope_table)
+a_slope_table.to_csv(config["paths"]["output_reg_slopes"], index=False)
+
+"""
 plot_rel(merged["13C_Glucose_ratio"], merged["13C_Acetate_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Acetate]/Peak Area mMol/a.u.")
@@ -167,12 +216,15 @@ plot_rel(merged["13C_Glucose_ratio"], merged["13C_Butyrate_ratio"],
 plot_rel(merged["13C_Glucose_ratio"], merged["13C_Ethanol_ratio"],
                 xlabel="[13C_Glucose]/Peak Area mMol/a.u.",
                 ylabel="[13C_Ethanol]/Peak Area mMol/a.u.")
+"""
 
 # standard curve using just glucose
-plot_rel(merged["13C_Glucose_mMol"], merged["13C_Glucose"],
-                xlabel="[13C_Glucose] (mMol)",
-                ylabel="13C_Glucose Peak Area (a.u.)")
+# plot_rel(merged["13C_Glucose_mMol"], merged["13C_Glucose"],
+#                 xlabel="[13C_Glucose] (mMol)",
+#                 ylabel="13C_Glucose Peak Area (a.u.)")
 
+"""
+# Testing using Acqus_Time rescaling
 plot_rel(merged["Acqus_Time"], merged["13C_Glucose"],
                 xlabel="Number of scans",
                 ylabel="13C_Glucose Peak Area (a.u.)")
@@ -184,7 +236,14 @@ plot_rel(merged["13C_Glucose_mMol"], merged["13C_Glucose"]/merged["Acqus_Time"],
 plot_rel(merged["13C_Glucose_mMol"], merged["13C_Glucose"]/np.sqrt(merged["Acqus_Time"]),
                 xlabel="[13C_Glucose] (mMol)",
                 ylabel="13C_Glucose Peak Area (a.u.) / sqrt(Number of scans)")
+"""
 
+
+
+
+
+
+"""
 # same procedure for 1H data
 
 
@@ -254,9 +313,11 @@ for metab in metab_list:
     # rescale by Acqus_Time
     # merged[metab] = merged[metab] / merged["Acqus_Time"]
     # calculate ratio
-    merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
+    # merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
+    merged[f"{metab}_ratio"] = merged[f"{metab}_mMol"] / merged[metab]
 
-merged["13C_Alanine2_ratio"] = merged["13C_Alanine2"] / (merged["13C_Alanine_mMol"])
+# merged["13C_Alanine2_ratio"] = merged["13C_Alanine2"] / (merged["13C_Alanine_mMol"])
+merged["13C_Alanine2_ratio"] = (merged["13C_Alanine_mMol"]) / merged["13C_Alanine2"]
 
 merged.to_csv("standard_regression_plots_1H.csv", index=False)
 
@@ -333,37 +394,4 @@ plot_rel_color(merged["13C_Ethanol_mMol"], merged["13C_Ethanol"] / merged["Total
                 xlabel="13C_Ethanol mMol",
                 ylabel="13_C_Ethanol Peak Area (a.u.) / Total Area (a.u.)",
                 c=merged["Time"])
-
-"""
-merged_temp = merged[merged["Acqus_Time"] == 128]
-plot_rel_color(merged_temp["13C_Glucose_mMol"], merged_temp["13C_Glucose"],
-                xlabel="13C_Glucose mMol",
-                ylabel="13_C_Glucose Peak Area a.u.",
-                c=merged_temp["Time"])
-"""
-                
-"""
-# from att5_peak_match2_sliders.py
-# areas are negative because ppm is decreasing
->>> real_times
-array([  1., 101.,  11., 111., 121.,   2.,  21.,  31.,  41.,   5.,  51.,
-        61.,  71.,  81.,  91.])
->>> areas = -np.trapz(traces, x=ppm, axis=0)
->>> areas
-array([   5725.15982512,  251404.54377862, 1597985.85263905,
-       1317754.22866447,  215673.8013313 ,   26750.70580491,
-        363026.03883776,  382053.42846874,  636364.37455709,
-          8888.56952334,  298581.14083037,  348092.51816054,
-        406638.68362965,  289010.53542787, 1409229.00448348])
-"""
-
-"""
-# area calculation with glucose peak exclusion
-glc_bounds = [5.280111526483787, 5.340041650219163]
-areas = -np.trapz(traces, x=ppm, axis=0)
-# mask for ppm values *outside* the excluded range
-mask = (ppm < glc_bounds[0]) | (ppm > glc_bounds[1])
-
-# integrate only where mask is True
-areas_glc = -np.trapz(traces[mask, :], x=ppm[mask], axis=0)
 """

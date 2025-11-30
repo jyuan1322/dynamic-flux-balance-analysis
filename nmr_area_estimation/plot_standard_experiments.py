@@ -64,6 +64,48 @@ for metabolite, scale_factor in proton_num.items():
 
 merged = pd.merge(df_grouped, ref_concs, on='Time')
 
+# 11/25/2025
+# Test: Can you relate concentration to area / proton number
+plt.scatter(merged["13C_Alanine_mMol"]/merged["13C_Alanine"],
+            merged["13C_Butyrate_mMol"]/merged["13C_Butyrate"])
+# plot concentration vs peak area across all
+# Identify area and concentration columns
+area_cols = [c for c in merged.columns if c.startswith("13C_") and not c.endswith("_mMol")]
+conc_cols = [c for c in merged.columns if c.endswith("_mMol")]
+
+# Reshape to long format
+merged_area = merged[["Time"] + area_cols].melt(id_vars="Time",
+                                        var_name="metabolite",
+                                        value_name="area")
+
+merged_conc = merged[["Time"] + conc_cols].melt(id_vars="Time",
+                                        var_name="metabolite",
+                                        value_name="concentration")
+
+# Remove the _mMol suffix so names match
+merged_conc["metabolite"] = merged_conc["metabolite"].str.replace("_mMol", "", regex=False)
+
+# Merge the area and concentration columns
+long = pd.merge(merged_area, merged_conc, on=["Time", "metabolite"])
+
+plt.figure(figsize=(7,5))
+
+for m, sub in long.groupby("metabolite"):
+    plt.scatter(sub["concentration"], sub["area"], label=m, s=80)
+
+plt.xlabel("Concentration (mMol)")
+plt.ylabel("NMR Peak Area")
+plt.title("Area vs Concentration by Metabolite")
+plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
 
 # Add acquisition time rescale from Xi
 # For now, removing this because it doesn't successfully correct for conc vs area trend
@@ -81,14 +123,19 @@ for metab in metab_list:
     # merged[metab] = merged[metab] / merged["Acqus_Time"]
     # calculate ratio
     # merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
-    merged[f"{metab}_ratio"] = merged[f"{metab}_mMol"] / merged[metab]
+    if "invert_ratios" in config["ratio_method"] and config["ratio_method"]["invert_ratios"]:
+        # Inverted: NMR area / concentration
+        merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
+    else:
+        # Normal: concentration / NMR area
+        merged[f"{metab}_ratio"] = merged[f"{metab}_mMol"] / merged[metab]
 
 
 def plot_rel(x, y, xlabel, ylabel):
     # Convert to NumPy arrays in case they aren't
     x = np.array(x)
     y = np.array(y)
-    
+
     # Remove NaN and inf values
     mask = np.isfinite(x) & np.isfinite(y)  # True for values that are not NaN or inf
     x_clean = x[mask]
@@ -103,7 +150,7 @@ def plot_rel(x, y, xlabel, ylabel):
     plt.plot(x_clean, y_fit, color='red')
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    
+
     # Add trendline equation and R^2
     plt.text(
         0.05, 0.95,
@@ -112,7 +159,7 @@ def plot_rel(x, y, xlabel, ylabel):
         fontsize=12,
         verticalalignment='top'
     )
-    
+
     plt.show()
 
 def plot_rel_color(x, y, xlabel, ylabel, title=None, c=None, cmap="viridis", fit_intercept=True):
@@ -183,10 +230,16 @@ target_metabs = [ x.strip() for x in config["ratio_method"]["target_metabs"].spl
 
 a_slope_table = []   # list of dicts
 for target_metab in target_metabs:
-    slope, intercept, r2 = plot_rel_color(merged[f"{anchor_metab}_ratio"], 
+    if "invert_ratios" in config["ratio_method"] and config["ratio_method"]["invert_ratios"]:
+        xlab = f"Peak Area/[{anchor_metab}] [a.u./mMol]"
+        ylab = f"Peak Area/[{target_metab}] [a.u./mMol]"
+    else:
+        xlab = f"[{anchor_metab}]/Peak Area [mMol/a.u.]"
+        ylab = f"[{target_metab}]/Peak Area [mMol/a.u.]"
+    slope, intercept, r2 = plot_rel_color(merged[f"{anchor_metab}_ratio"],
                                           merged[f"{target_metab}_ratio"],
-                                          xlabel=f"[{anchor_metab}]/Peak Area [mMol/a.u.]",
-                                          ylabel=f"[{target_metab}]/Peak Area [mMol/a.u.]",
+                                          xlabel=xlab,
+                                          ylabel=ylab,
                                           title=f"{target_metab} Standard Curve",
                                           c=merged[target_metab], fit_intercept=False)
     a_slope_table.append({

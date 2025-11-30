@@ -23,8 +23,8 @@ input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/o
 # exp_name = "Data7_13CGlc1_13C"
 # exp_name = "Data8_13CGlc2_13C"
 # exp_name = "Data9_13CGlc3_13C"
-# exp_name = "Data7_13CGlc1_1H"
-exp_name = "spectra_1H"
+exp_name = "Data7_13CGlc1_1H"
+# exp_name = "spectra_1H" # for UGA experiments
 
 # exp_name = "Data1_13CPro1_1H"
 # exp_name = "Data2_13CPro2_1H"
@@ -76,7 +76,6 @@ print(len(df), "rows loaded")
 if df['time'].isna().any():
     df['time'] = df['trace_index']
 
-
 df_grouped = df.pivot(index="metabolite", columns="time", values="total_area")
 df_grouped = df_grouped.T
 df_grouped = df_grouped.reset_index().rename(columns={"time": "Time"})
@@ -85,23 +84,23 @@ df_grouped = df_grouped.reset_index().rename(columns={"time": "Time"})
 
 # UGA HRMAS 10/31/2025, 11/03/2025
 if exp_name in ["spectra_1H"]:
-df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 0.5
-df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 1.5
-df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 1.5
-df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 1.5
-df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 1.5
-# correct for increase in number of scans
-# 10/31/2025
-# cols_to_half = ['13C_Glucose', '13C_Acetate', '13C_Butyrate']
-# df_grouped.loc[df_grouped['Time'] >= 206, cols_to_half] = df_grouped.loc[df_grouped['Time'] >= 206, cols_to_half] / 2
-# 11/03/2025
-df_grouped = df_grouped[df_grouped['Time'] <= 223]
-cols_to_half = ['13C_Glucose', '13C_Acetate', '13C_Butyrate', '13C_Alanine', '13C_Ethanol']
-df_grouped.loc[df_grouped['Time'] >= 131, cols_to_half] = df_grouped.loc[df_grouped['Time'] >= 131, cols_to_half] / 2
-# remove the first and last time point (not aligned)
-tmin = df_grouped["Time"].min()
-tmax = df_grouped["Time"].max()
-df_grouped = df_grouped[(df_grouped["Time"] != tmin) & (df_grouped["Time"] != tmax)]
+    df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 0.5
+    df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 1.5
+    df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 1.5
+    df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 1.5
+    df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 1.5
+    # correct for increase in number of scans
+    # 10/31/2025
+    # cols_to_half = ['13C_Glucose', '13C_Acetate', '13C_Butyrate']
+    # df_grouped.loc[df_grouped['Time'] >= 206, cols_to_half] = df_grouped.loc[df_grouped['Time'] >= 206, cols_to_half] / 2
+    # 11/03/2025
+    df_grouped = df_grouped[df_grouped['Time'] <= 223]
+    cols_to_half = ['13C_Glucose', '13C_Acetate', '13C_Butyrate', '13C_Alanine', '13C_Ethanol']
+    df_grouped.loc[df_grouped['Time'] >= 131, cols_to_half] = df_grouped.loc[df_grouped['Time'] >= 131, cols_to_half] / 2
+    # remove the first and last time point (not aligned)
+    tmin = df_grouped["Time"].min()
+    tmax = df_grouped["Time"].max()
+    df_grouped = df_grouped[(df_grouped["Time"] != tmin) & (df_grouped["Time"] != tmax)]
 
 
 if exp_name in ["Data7_13CGlc1_13C"]:
@@ -158,8 +157,8 @@ elif exp_name in ["Data1_13CPro1_1H", "Data2_13CPro2_1H", "Data3_13CPro3_1H", "D
 
     # glucose data7
     # >>> metabolites
-    # ['13C_Acetate', '13C_Alanine2', '13C_Butyrate', '13C_Ethanol', 
-    # '13C_Glucose', '5-aminovalerate', 'Arginine', 'Histidine', 
+    # ['13C_Acetate', '13C_Alanine2', '13C_Butyrate', '13C_Ethanol',
+    # '13C_Glucose', '5-aminovalerate', 'Arginine', 'Histidine',
     # 'Isocaproate', 'Leucine', 'Methionine', 'Proline', 'Threonine', 'Tryptophan']
     initial_n_values_to_ave = 1
     final_n_values_to_ave = 10
@@ -214,22 +213,56 @@ elif exp_name in ["Data1_13CPro1_1H", "Data2_13CPro2_1H", "Data3_13CPro3_1H", "D
     # 13C_Alanine | 8.603 * [Glc] * (Product final area) / (Glc initial area)
     # 13C_Ethanol | 7.663 * [Glc] * (Product final area) / (Glc initial area)
     # for now, assume glucose consumed = initial glucose
-    
+
     # df_grouped["13C_Butyrate"] = glucose_initial_conc / glucose_initial_area * \
     #                                 df_grouped["13C_Butyrate"] * 5.487
-    # 
+    #
     # final_val = np.mean(df_grouped["13C_Acetate"][-(final_n_values_to_ave+1):-1])
     # final_area = 3.521 * glucose_initial_conc * final_val / glucose_initial_area
     # df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / final_val * final_area
-    # 
+    #
     # final_val = np.mean(df_grouped["13C_Alanine2"][-(final_n_values_to_ave+1):-1])
     # final_area = 8.603 * glucose_initial_conc * final_val / glucose_initial_area
     # df_grouped["13C_Alanine2"] = df_grouped["13C_Alanine2"] / final_val * final_area
-    # 
+    #
     # final_val = np.mean(df_grouped["13C_Ethanol"][-(final_n_values_to_ave+1):-1])
     # final_area = 7.663 * glucose_initial_conc * final_val / glucose_initial_area
     # df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / final_val * final_area
 
+
+    # ----------
+    # 11/25/2025
+    # Recreate just Glc and Glc products from Data7_13CGlc1
+    # Also, set Alanine2 --> Alanine
+    # TODO: This is a hack. Make sure to standardize this.
+    # ----------
+df_grouped["13C_Alanine"] = df_grouped["13C_Alanine2"] / 1.0
+df_grouped = df_grouped[["Time", "13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_Ethanol"]]
+
+initial_n_values_to_ave = 1
+final_n_values_to_ave = 10
+glucose_initial_conc = 27.5
+initial_val = np.mean(df_grouped["13C_Glucose"][:initial_n_values_to_ave])
+glucose_initial_area = initial_val # store this for ratio scaling later
+df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / initial_val * glucose_initial_conc
+
+final_val = np.mean(df_grouped["13C_Butyrate"][-(final_n_values_to_ave+1):-1])
+final_area = 1.035 * glucose_initial_conc * final_val / glucose_initial_area
+df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / final_val * final_area
+
+final_val = np.mean(df_grouped["13C_Acetate"][-(final_n_values_to_ave+1):-1])
+final_area = 1.468 * glucose_initial_conc * final_val / glucose_initial_area
+df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / final_val * final_area
+
+final_val = np.mean(df_grouped["13C_Alanine"][-(final_n_values_to_ave+1):-1])
+final_area = 0.249 * glucose_initial_conc * final_val / glucose_initial_area
+df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / final_val * final_area
+
+final_val = np.mean(df_grouped["13C_Ethanol"][-(final_n_values_to_ave+1):-1])
+final_area = 1.478 * glucose_initial_conc * final_val / glucose_initial_area
+df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / final_val * final_area
+
+    """
     df_grouped["13C_Butyrate"] = glucose_initial_conc / glucose_initial_area * \
                                     df_grouped["13C_Butyrate"] * 3.554
 
@@ -244,6 +277,7 @@ elif exp_name in ["Data1_13CPro1_1H", "Data2_13CPro2_1H", "Data3_13CPro3_1H", "D
     final_val = np.mean(df_grouped["13C_Ethanol"][-(final_n_values_to_ave+1):-1])
     final_area = 4.703 * glucose_initial_conc * final_val / glucose_initial_area
     df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / final_val * final_area
+    """
 
 import matplotlib.pyplot as plt
 plt.figure(figsize=(8,5))
@@ -552,7 +586,8 @@ for i, target_col in enumerate(metabolites):
 # ax2.set_xlabel('Time (hours)')
 # ax1.set_xlabel('Timepoint')
 ax1.set_xlabel('Time (hours)')
-ax1.set_ylabel('NMR area under peaks (a.u.)')
+# ax1.set_ylabel('NMR area under peaks (a.u.)')
+ax1.set_ylabel('Scaled Concentration (mMol)')
 # ax2.set_ylabel('Scaled Concentration (mMol)')
 # ax1.set_title("Logistic Fits (Means + 95% CI)")
 # ax2.set_title("Posterior Sample Logistic Curves")

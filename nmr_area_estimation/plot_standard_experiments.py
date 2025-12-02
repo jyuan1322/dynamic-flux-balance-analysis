@@ -9,6 +9,7 @@ from scipy.stats import linregress
 config = configparser.ConfigParser()
 config.optionxform = str   # <-- turn off lowercasing
 config.read("plot_standard_experiments_1H.ini")
+invert_ratios = config.getboolean("ratio_method", "invert_ratios")
 
 # base_dir = config["paths"]["base_dir"]
 # output_dir = config["paths"]["output_dir"]
@@ -38,7 +39,7 @@ for fname in os.listdir(input_dir):
             else:
                 raise ValueError(f"{fname} is not a flat dict JSON")
 
-# Convert list of dicts → DataFrame
+# Convert list of dicts --> DataFrame
 df = pd.DataFrame(records)
 df["total_area"] = df["total_area"].clip(lower=0)
 
@@ -64,47 +65,6 @@ for metabolite, scale_factor in proton_num.items():
 
 merged = pd.merge(df_grouped, ref_concs, on='Time')
 
-# 11/25/2025
-# Test: Can you relate concentration to area / proton number
-plt.scatter(merged["13C_Alanine_mMol"]/merged["13C_Alanine"],
-            merged["13C_Butyrate_mMol"]/merged["13C_Butyrate"])
-# plot concentration vs peak area across all
-# Identify area and concentration columns
-area_cols = [c for c in merged.columns if c.startswith("13C_") and not c.endswith("_mMol")]
-conc_cols = [c for c in merged.columns if c.endswith("_mMol")]
-
-# Reshape to long format
-merged_area = merged[["Time"] + area_cols].melt(id_vars="Time",
-                                        var_name="metabolite",
-                                        value_name="area")
-
-merged_conc = merged[["Time"] + conc_cols].melt(id_vars="Time",
-                                        var_name="metabolite",
-                                        value_name="concentration")
-
-# Remove the _mMol suffix so names match
-merged_conc["metabolite"] = merged_conc["metabolite"].str.replace("_mMol", "", regex=False)
-
-# Merge the area and concentration columns
-long = pd.merge(merged_area, merged_conc, on=["Time", "metabolite"])
-
-plt.figure(figsize=(7,5))
-
-for m, sub in long.groupby("metabolite"):
-    plt.scatter(sub["concentration"], sub["area"], label=m, s=80)
-
-plt.xlabel("Concentration (mMol)")
-plt.ylabel("NMR Peak Area")
-plt.title("Area vs Concentration by Metabolite")
-plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-plt.tight_layout()
-plt.show()
-
-
-
-
-
-
 
 
 # Add acquisition time rescale from Xi
@@ -123,14 +83,14 @@ for metab in metab_list:
     # merged[metab] = merged[metab] / merged["Acqus_Time"]
     # calculate ratio
     # merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
-    if "invert_ratios" in config["ratio_method"] and config["ratio_method"]["invert_ratios"]:
+    if invert_ratios:
         # Inverted: NMR area / concentration
         merged[f"{metab}_ratio"] = merged[metab] / merged[f"{metab}_mMol"]
     else:
         # Normal: concentration / NMR area
         merged[f"{metab}_ratio"] = merged[f"{metab}_mMol"] / merged[metab]
 
-
+"""
 def plot_rel(x, y, xlabel, ylabel):
     # Convert to NumPy arrays in case they aren't
     x = np.array(x)
@@ -162,6 +122,7 @@ def plot_rel(x, y, xlabel, ylabel):
 
     plt.show()
 
+
 def plot_rel_color(x, y, xlabel, ylabel, title=None, c=None, cmap="viridis", fit_intercept=True):
     # Convert to NumPy arrays
     x = np.array(x)
@@ -189,7 +150,9 @@ def plot_rel_color(x, y, xlabel, ylabel, title=None, c=None, cmap="viridis", fit
         # Compute r^2 manually
         y_pred = slope * x_clean
         ss_res = np.sum((y_clean - y_pred)**2)
-        ss_tot = np.sum((y_clean - np.mean(y_clean))**2)
+        # ss_tot = np.sum((y_clean - np.mean(y_clean))**2)
+        # need to adjust this for no intercept
+        ss_tot = np.sum(y_clean ** 2)
         r_value = np.sqrt(1 - ss_res / ss_tot)
 
     y_fit = slope * x_clean + intercept
@@ -205,9 +168,9 @@ def plot_rel_color(x, y, xlabel, ylabel, title=None, c=None, cmap="viridis", fit
 
     plt.text(
         0.05, 0.95,
-        f"y={slope:.3f}x"
-        + (f"+{intercept:.3f}" if fit_intercept else "")
-        + f"\n$R^2$={r_value**2:.3f}",
+        f'y={slope:.3f}x'
+        + (f'+{intercept:.3f}' if fit_intercept else "")
+        + f'\n$R^2$={r_value**2:.3f}',
         transform=plt.gca().transAxes,
         fontsize=12,
         verticalalignment='top'
@@ -230,7 +193,7 @@ target_metabs = [ x.strip() for x in config["ratio_method"]["target_metabs"].spl
 
 a_slope_table = []   # list of dicts
 for target_metab in target_metabs:
-    if "invert_ratios" in config["ratio_method"] and config["ratio_method"]["invert_ratios"]:
+    if invert_ratios:
         xlab = f"Peak Area/[{anchor_metab}] [a.u./mMol]"
         ylab = f"Peak Area/[{target_metab}] [a.u./mMol]"
     else:
@@ -252,6 +215,143 @@ for target_metab in target_metabs:
 
 a_slope_table = pd.DataFrame(a_slope_table)
 a_slope_table.to_csv(config["paths"]["output_reg_slopes"], index=False)
+"""
+
+
+
+
+
+# 11/30/2025
+import pandas as pd
+import itertools
+from scipy.odr import ODR, Model, RealData
+
+def linreg_no_intercept(x, y):
+    # Fit without intercept: y = a*x
+    slope = np.sum(x * y) / np.sum(x ** 2)
+    # Compute r^2 manually
+    y_pred = slope * x
+    ss_res = np.sum((y - y_pred)**2)
+    # ss_tot = np.sum((y_clean - np.mean(y_clean))**2)
+    # need to adjust this for no intercept
+    ss_tot = np.sum(y ** 2)
+    r_value = np.sqrt(1 - ss_res / ss_tot)
+    r2 = r_value**2
+    return slope, r2
+
+def odr_no_intercept(x, y):
+    def f_no_intercept(B, x):
+        return B[0] * x   # B[0] is slope
+
+    data = RealData(x, y)
+    model = Model(f_no_intercept)
+    odr = ODR(data, model, beta0=[1.0]) # beta is the initial slope guess
+    out = odr.run()
+
+    slope = out.beta[0]
+    # slope_std = out.sd_beta[0]
+
+    # compute orthogonal distances
+    # for line y = slope * x, orthogonal distance formula
+    d = np.abs(slope*x - y) / np.sqrt(slope**2 + 1)
+
+    # total variance from centroid
+    x_bar = np.mean(x)
+    y_bar = np.mean(y)
+    tot_var = np.sum((x - x_bar)**2 + (y - y_bar)**2)
+
+    # pseudo R^2, which calculates
+    # 1 - sum(distance^2) / sum( (x-meanx)^2 + (y-meany)^2 )
+    r2_orth = 1 - np.sum(d**2) / tot_var
+    return slope, r2_orth
+
+def plot_odr_fit_annotated(x, y, slope, r2, xlabel, ylabel, title=None,
+                           c=None, cmap="viridis"):
+    x = np.asarray(x).flatten()
+    y = np.asarray(y).flatten()
+    mask = np.isfinite(x) & np.isfinite(y)
+    if c is not None:
+        c = np.asarray(c)
+        mask &= np.isfinite(c)
+        c_clean = c[mask]
+    else:
+        c_clean = None
+    x_clean = x[mask]
+    y_clean = y[mask]
+    # Fitted values
+    y_fit = slope * x_clean
+    sc = plt.scatter(x_clean, y_clean, c=c_clean, cmap=cmap)
+    plt.plot(x_clean, y_fit, color="red")
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if c is not None:
+        plt.colorbar(sc, label="Magnitude")
+    # Text box with slope + R^2
+    plt.text(
+        0.05, 0.95,
+        f"y = {slope:.3f}·x\n$R^2$ = {r2:.3f}",
+        transform=plt.gca().transAxes,
+        fontsize=12,
+        verticalalignment='top'
+    )
+    if title:
+        plt.title(title)
+    plt.show()
+
+
+
+
+
+
+# create a matrix of slopes and r-squared values for each relative regression
+ratio_cols = [c for c in merged.columns if c.endswith("_ratio")]
+ratio_results = []
+use_odr = True
+
+for xcol, ycol in itertools.combinations(ratio_cols, 2):
+    x = merged[[xcol]].values
+    y = merged[[ycol]].values
+
+    if use_odr:
+        slope, r2 = odr_no_intercept(x, y)
+    else:
+        slope, r2 = linreg_no_intercept(x, y)
+
+    ratio_results.append({
+        "metab_x": xcol,
+        "metab_y": ycol,
+        "slope_y_vs_x": slope,
+        "r2": r2
+    })
+
+ratio_results = pd.DataFrame(ratio_results)
+if use_odr:
+    ratio_results.to_csv("glc_standard_metrics_odr.csv", index=False)
+else:
+    ratio_results.to_csv("glc_standard_metrics_ols.csv", index=False)
+
+if use_odr:
+    for _, row in ratio_results.iterrows():
+        xcol = row["metab_x"]
+        ycol = row["metab_y"]
+        slope = row["slope_y_vs_x"]
+        r2 = row["r2"]
+
+        x = merged[xcol].values
+        y = merged[ycol].values
+
+        if invert_ratios:
+            xlabel=f'{xcol} (NMR area)/(Concentration mMol)'
+            ylabel=f'{ycol} (NMR area)/(Concentration mMol)'
+        else:
+            xlabel=f'{xcol} (Concentration mMol)/(NMR area)'
+            ylabel=f'{ycol} (Concentration mMol)/(NMR area)'
+        plot_odr_fit_annotated(
+            x, y, slope, r2,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            title=f"{ycol} vs {xcol} (ODR fit)"
+        )
 
 """
 plot_rel(merged["13C_Glucose_ratio"], merged["13C_Acetate_ratio"],

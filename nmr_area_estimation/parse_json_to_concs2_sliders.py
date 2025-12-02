@@ -236,31 +236,37 @@ elif exp_name in ["Data1_13CPro1_1H", "Data2_13CPro2_1H", "Data3_13CPro3_1H", "D
     # Also, set Alanine2 --> Alanine
     # TODO: This is a hack. Make sure to standardize this.
     # ----------
+# --------------------
+# run this
+# --------------------
 df_grouped["13C_Alanine"] = df_grouped["13C_Alanine2"] / 1.0
 df_grouped = df_grouped[["Time", "13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_Ethanol"]]
 
-initial_n_values_to_ave = 1
-final_n_values_to_ave = 10
-glucose_initial_conc = 27.5
-initial_val = np.mean(df_grouped["13C_Glucose"][:initial_n_values_to_ave])
-glucose_initial_area = initial_val # store this for ratio scaling later
-df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / initial_val * glucose_initial_conc
-
-final_val = np.mean(df_grouped["13C_Butyrate"][-(final_n_values_to_ave+1):-1])
-final_area = 1.035 * glucose_initial_conc * final_val / glucose_initial_area
-df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / final_val * final_area
-
-final_val = np.mean(df_grouped["13C_Acetate"][-(final_n_values_to_ave+1):-1])
-final_area = 1.468 * glucose_initial_conc * final_val / glucose_initial_area
-df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / final_val * final_area
-
-final_val = np.mean(df_grouped["13C_Alanine"][-(final_n_values_to_ave+1):-1])
-final_area = 0.249 * glucose_initial_conc * final_val / glucose_initial_area
-df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / final_val * final_area
-
-final_val = np.mean(df_grouped["13C_Ethanol"][-(final_n_values_to_ave+1):-1])
-final_area = 1.478 * glucose_initial_conc * final_val / glucose_initial_area
-df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / final_val * final_area
+# --------------------
+# don't run this: fit the logistic functions to the raw nmr areas, and then scale together
+# --------------------
+# initial_n_values_to_ave = 1
+# final_n_values_to_ave = 10
+# glucose_initial_conc = 27.5
+# initial_val = np.mean(df_grouped["13C_Glucose"][:initial_n_values_to_ave])
+# glucose_initial_area = initial_val # store this for ratio scaling later
+# df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / initial_val * glucose_initial_conc
+# 
+# final_val = np.mean(df_grouped["13C_Butyrate"][-(final_n_values_to_ave+1):-1])
+# final_area = 1.035 * glucose_initial_conc * final_val / glucose_initial_area
+# df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / final_val * final_area
+# 
+# final_val = np.mean(df_grouped["13C_Acetate"][-(final_n_values_to_ave+1):-1])
+# final_area = 1.468 * glucose_initial_conc * final_val / glucose_initial_area
+# df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / final_val * final_area
+# 
+# final_val = np.mean(df_grouped["13C_Alanine"][-(final_n_values_to_ave+1):-1])
+# final_area = 0.249 * glucose_initial_conc * final_val / glucose_initial_area
+# df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / final_val * final_area
+# 
+# final_val = np.mean(df_grouped["13C_Ethanol"][-(final_n_values_to_ave+1):-1])
+# final_area = 1.478 * glucose_initial_conc * final_val / glucose_initial_area
+# df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / final_val * final_area
 
     """
     df_grouped["13C_Butyrate"] = glucose_initial_conc / glucose_initial_area * \
@@ -569,6 +575,7 @@ fig, ax1 = plt.subplots(1, 1, figsize=(10, 8), sharex=True)
 # metabs_b = list(set(metabolites) - set(metabs_a))
 # for i, target_col in enumerate(metabs_b):
 all_logistic_preds = None
+logistic_params = []
 for i, target_col in enumerate(metabolites):
     print('-'*40)
     print(target_col)
@@ -581,23 +588,147 @@ for i, target_col in enumerate(metabolites):
         all_logistic_preds = logistic_pred_df
     else:
         all_logistic_preds = pd.concat([all_logistic_preds, logistic_pred_df], axis=1)
+    logistic_params.append({
+        "metab": target_col,
+        "A": logistic_df["A"].mean(),
+        "B": logistic_df["B"].mean(),
+        "C": logistic_df["C"].mean(),
+        "D": logistic_df["D"].mean()
+    })
+
+logistic_params = pd.DataFrame(logistic_params)
+logistic_params = logistic_params.set_index("metab")
 
 # Common labels and legend
 # ax2.set_xlabel('Time (hours)')
 # ax1.set_xlabel('Timepoint')
 ax1.set_xlabel('Time (hours)')
-# ax1.set_ylabel('NMR area under peaks (a.u.)')
-ax1.set_ylabel('Scaled Concentration (mMol)')
+ax1.set_ylabel('NMR area under peaks (a.u.)')
+# ax1.set_ylabel('Scaled Concentration (mMol)')
 # ax2.set_ylabel('Scaled Concentration (mMol)')
 # ax1.set_title("Logistic Fits (Means + 95% CI)")
 # ax2.set_title("Posterior Sample Logistic Curves")
 ax1.legend()
 plt.tight_layout()
-output_trajct_fname = f"logistic_fits_{exp_name}.pdf"
+output_trajct_fname = f"logistic_fits_raw_areas_{exp_name}.pdf"
+# plt.savefig(os.path.join(input_dir, output_trajct_fname))
+plt.show()
+
+df_grouped_conc = df_grouped.copy()
+
+glucose_initial_conc = 27.5
+glucose_lower_asymp = logistic_params.loc["13C_Glucose", "A"]
+glucose_upper_asymp = logistic_params.loc["13C_Glucose", "B"]
+glc_const = glucose_initial_conc / glucose_upper_asymp
+df_grouped_conc["13C_Glucose"] = glc_const * df_grouped["13C_Glucose"]
+
+# acetate
+# slope_ace_vs_glc = 0.837222556 # inverted
+# ace_const = 1 / slope_ace_vs_glc * glucose_initial_conc / glucose_upper_asymp
+slope_ace_vs_glc = 1.47302042086492
+ace_const = slope_ace_vs_glc * glucose_initial_conc / glucose_upper_asymp
+df_grouped_conc["13C_Acetate"] = ace_const * df_grouped["13C_Acetate"]
+# df_grouped_conc["13C_Acetate"] = 1 / slope_ace_vs_glc * df_grouped["13C_Acetate"] * \
+#                                  df_grouped_conc["13C_Glucose"] / df_grouped["13C_Glucose"]
+
+# alanine
+# slope_ala_vs_glc = 4.344634795 # inverted
+# ala_const = 1 / slope_ala_vs_glc * glucose_initial_conc / glucose_upper_asymp
+slope_ala_vs_glc = 0.2492142688906
+ala_const = slope_ala_vs_glc * glucose_initial_conc / glucose_upper_asymp
+df_grouped_conc["13C_Alanine"] = ala_const * df_grouped["13C_Alanine"]
+
+# butyrate
+# slope_but_vs_glc = 0.954615776 # inverted
+# but_const = 1 / slope_but_vs_glc * glucose_initial_conc / glucose_upper_asymp
+slope_but_vs_glc = 1.04696313408039
+but_const = slope_but_vs_glc * glucose_initial_conc / glucose_upper_asymp
+df_grouped_conc["13C_Butyrate"] = but_const * df_grouped["13C_Butyrate"]
+
+# ethanol
+# slope_eth_vs_glc = 0.944614139 # inverted
+# eth_const = 1 / slope_eth_vs_glc * glucose_initial_conc / glucose_upper_asymp
+slope_eth_vs_glc = 1.49704986074295
+eth_const = slope_eth_vs_glc * glucose_initial_conc / glucose_upper_asymp
+df_grouped_conc["13C_Ethanol"] = eth_const * df_grouped["13C_Ethanol"]
+
+# update logistic parameters
+all_logistic_preds_concs = all_logistic_preds.copy()
+all_logistic_preds_concs["13C_Glucose_mean"] = glc_const * all_logistic_preds["13C_Glucose_mean"]
+all_logistic_preds_concs["13C_Glucose_lower"] = glc_const * all_logistic_preds["13C_Glucose_lower"]
+all_logistic_preds_concs["13C_Glucose_upper"] = glc_const * all_logistic_preds["13C_Glucose_upper"]
+
+all_logistic_preds_concs["13C_Acetate_mean"] = ace_const * all_logistic_preds["13C_Acetate_mean"]
+all_logistic_preds_concs["13C_Acetate_lower"] = ace_const * all_logistic_preds["13C_Acetate_lower"]
+all_logistic_preds_concs["13C_Acetate_upper"] = ace_const * all_logistic_preds["13C_Acetate_upper"]
+
+all_logistic_preds_concs["13C_Alanine_mean"] = ala_const * all_logistic_preds["13C_Alanine_mean"]
+all_logistic_preds_concs["13C_Alanine_lower"] = ala_const * all_logistic_preds["13C_Alanine_lower"]
+all_logistic_preds_concs["13C_Alanine_upper"] = ala_const * all_logistic_preds["13C_Alanine_upper"]
+
+all_logistic_preds_concs["13C_Butyrate_mean"] = but_const * all_logistic_preds["13C_Butyrate_mean"]
+all_logistic_preds_concs["13C_Butyrate_lower"] = but_const * all_logistic_preds["13C_Butyrate_lower"]
+all_logistic_preds_concs["13C_Butyrate_upper"] = but_const * all_logistic_preds["13C_Butyrate_upper"]
+
+all_logistic_preds_concs["13C_Ethanol_mean"] = eth_const * all_logistic_preds["13C_Ethanol_mean"]
+all_logistic_preds_concs["13C_Ethanol_lower"] = eth_const * all_logistic_preds["13C_Ethanol_lower"]
+all_logistic_preds_concs["13C_Ethanol_upper"] = eth_const * all_logistic_preds["13C_Ethanol_upper"]
+
+
+fig, ax1 = plt.subplots(1, 1, figsize=(10, 8), sharex=True)
+
+metabolites = [x for x in df_grouped_conc.columns if x != "Time"]
+for i, target_col in enumerate(metabolites):
+    print('-'*40)
+    print(target_col)
+    ax1.plot(all_logistic_preds_concs[f"{target_col}_times"],
+            all_logistic_preds_concs[f"{target_col}_mean"],
+            linewidth=2, color=colors[i], label=f'{target_col} 95% CI')
+    ax1.fill_between(all_logistic_preds_concs[f"{target_col}_times"],
+                    all_logistic_preds_concs[f"{target_col}_lower"],
+                    all_logistic_preds_concs[f"{target_col}_upper"],
+                    color=colors[i], alpha=0.2, label='_nolegend_')
+    ax1.scatter(df_grouped_conc["Time"], df_grouped_conc[target_col],
+                color=colors[i], s=16, label='_nolegend_')
+
+# Common labels and legend
+ax1.set_xlabel('Time (hours)')
+# ax1.set_ylabel('NMR area under peaks (a.u.)')
+ax1.set_ylabel('Scaled Concentration (mMol)')
+# ax1.set_title("Logistic Fits (Means + 95% CI)")
+ax1.legend()
+plt.tight_layout()
+output_trajct_fname = f"logistic_fits_concs_{exp_name}.pdf"
 plt.savefig(os.path.join(input_dir, output_trajct_fname))
 plt.show()
 
 
+
+
+# initial_n_values_to_ave = 1
+# final_n_values_to_ave = 10
+# glucose_initial_conc = 27.5
+# initial_val = np.mean(df_grouped["13C_Glucose"][:initial_n_values_to_ave])
+# glucose_initial_area = initial_val # store this for ratio scaling later
+# df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / initial_val * glucose_initial_conc
+# 
+# final_val = np.mean(df_grouped["13C_Butyrate"][-(final_n_values_to_ave+1):-1])
+# final_area = 1.035 * glucose_initial_conc * final_val / glucose_initial_area
+# df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / final_val * final_area
+# 
+# final_val = np.mean(df_grouped["13C_Acetate"][-(final_n_values_to_ave+1):-1])
+# final_area = 1.468 * glucose_initial_conc * final_val / glucose_initial_area
+# df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / final_val * final_area
+# 
+# final_val = np.mean(df_grouped["13C_Alanine"][-(final_n_values_to_ave+1):-1])
+# final_area = 0.249 * glucose_initial_conc * final_val / glucose_initial_area
+# df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / final_val * final_area
+# 
+# final_val = np.mean(df_grouped["13C_Ethanol"][-(final_n_values_to_ave+1):-1])
+# final_area = 1.478 * glucose_initial_conc * final_val / glucose_initial_area
+# df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / final_val * final_area
+
+"""
 # scale logistic functions to actual mMol concentrations
 cols = [col for col in all_logistic_preds.columns if col.endswith("_times")]
 # if all time columns are the same, we can just keep one
@@ -611,3 +742,4 @@ all_logistic_preds = all_logistic_preds.drop(columns=cols)
 
 all_logistic_preds.to_csv(os.path.join(input_dir,
                           f"logistic_bounds_pre_conc_scaling_{exp_name}_10202025.csv"), index=False)
+"""

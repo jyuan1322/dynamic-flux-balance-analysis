@@ -240,7 +240,8 @@ elif exp_name in ["Data1_13CPro1_1H", "Data2_13CPro2_1H", "Data3_13CPro3_1H", "D
 # run this
 # --------------------
 df_grouped["13C_Alanine"] = df_grouped["13C_Alanine2"] / 1.0
-df_grouped = df_grouped[["Time", "13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_Ethanol"]]
+# df_grouped = df_grouped[["Time", "13C_Glucose", "13C_Acetate", "13C_Alanine", "13C_Butyrate", "13C_Ethanol"]]
+df_grouped = df_grouped.drop(columns=["13C_Alanine2"])
 
 # --------------------
 # don't run this: fit the logistic functions to the raw nmr areas, and then scale together
@@ -556,16 +557,17 @@ def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_c
 # metabolites = ["13C_butyrate", "2-aminobutyrate", "Isobutyrate", "Threonine"]
 # metabolites = ["13C_butyrate", "2-aminobutyrate", "Threonine"]
 metabolites = df_grouped.columns[1:].to_list()
-colors = cm.get_cmap("tab10", len(metabolites))
+# colors = cm.get_cmap("tab10", len(metabolites))
+colors = cm.get_cmap("tab20", len(metabolites))
 
 # Get the colormap object with the specified number of colors
 import matplotlib as mpl
 cmap = mpl.colormaps['tab20'].resampled(len(metabolites))
 
 # Access the list of colors from the colormap object
-# colors = cmap.colors
+colors = cmap.colors
 # revert to default colors
-colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+# colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
 # colors = ["darkorange", "royalblue", "green", "purple"]
 # fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
@@ -576,6 +578,7 @@ fig, ax1 = plt.subplots(1, 1, figsize=(10, 8), sharex=True)
 # for i, target_col in enumerate(metabs_b):
 all_logistic_preds = None
 logistic_params = []
+logistic_df_dict = {}
 for i, target_col in enumerate(metabolites):
     print('-'*40)
     print(target_col)
@@ -595,9 +598,18 @@ for i, target_col in enumerate(metabolites):
         "C": logistic_df["C"].mean(),
         "D": logistic_df["D"].mean()
     })
+    # store logstistic_df parameters
+    logistic_df_dict[target_col] = logistic_df
 
 logistic_params = pd.DataFrame(logistic_params)
 logistic_params = logistic_params.set_index("metab")
+
+
+os.makedirs(os.path.join(input_dir, "logistic_params"), exist_ok=True)
+for metab in logistic_df_dict:
+    logistic_df_dict[metab].to_csv(os.path.join(input_dir, "logistic_params",
+            f"logistic_params_samples_{exp_name}_{metab.replace(' ', '_')}.csv"),
+            index=False)
 
 # Common labels and legend
 # ax2.set_xlabel('Time (hours)')
@@ -651,6 +663,97 @@ df_grouped_conc["13C_Butyrate"] = but_const * df_grouped["13C_Butyrate"]
 slope_eth_vs_glc = 1.49704986074295
 eth_const = slope_eth_vs_glc * glucose_initial_conc / glucose_upper_asymp
 df_grouped_conc["13C_Ethanol"] = eth_const * df_grouped["13C_Ethanol"]
+
+# -----
+
+# arginine
+arg_initial_conc = 1.15
+arg_upper_asymp = logistic_params.loc["Arginine", "B"]
+arg_const = arg_initial_conc / arg_upper_asymp
+df_grouped_conc["Arginine"] = arg_const * df_grouped["Arginine"]
+
+# histidine
+his_initial_conc = 0.65
+his_upper_asymp = logistic_params.loc["Histidine", "B"]
+his_const = his_initial_conc / his_upper_asymp
+df_grouped_conc["Histidine"] = his_const * df_grouped["Histidine"]
+
+# methionine
+met_initial_conc = 1.34
+met_upper_asymp = logistic_params.loc["Methionine", "B"]
+met_const = met_initial_conc / met_upper_asymp
+df_grouped_conc["Methionine"] = met_const * df_grouped["Methionine"]
+
+# threonine
+thr_initial_conc = 1.68
+thr_upper_asymp = logistic_params.loc["Threonine", "B"]
+thr_const = thr_initial_conc / thr_upper_asymp
+df_grouped_conc["Threonine"] = thr_const * df_grouped["Threonine"]
+
+# tryptophan
+trp_initial_conc = 0.49
+trp_upper_asymp = logistic_params.loc["Tryptophan", "B"]
+trp_const = trp_initial_conc / trp_upper_asymp
+df_grouped_conc["Tryptophan"] = trp_const * df_grouped["Tryptophan"]
+
+proline_consumed = 6.96
+
+# proline
+proline_initial_conc = proline_consumed
+proline_upper_asymp = logistic_params.loc["Proline", "B"]
+proline_const = proline_initial_conc / proline_upper_asymp
+df_grouped_conc["Proline"] = proline_const * df_grouped["Proline"]
+
+# 5-aminovalerate
+fiveAV_final_conc = proline_consumed # same as proline initial conc
+fiveAV_upper_asymp = logistic_params.loc["5-aminovalerate", "B"]
+fiveAV_const = fiveAV_final_conc / fiveAV_upper_asymp
+df_grouped_conc["5-aminovalerate"] = fiveAV_const * df_grouped["5-aminovalerate"]
+
+leucine_consumed = 7.63
+
+# isocaproate
+final_concentration = 5.168 / (2.944 + 5.168 + 1.387) * leucine_consumed
+isocaproate_upper_asymp = logistic_params.loc["Isocaproate", "B"]
+isocaproate_const = final_concentration / isocaproate_upper_asymp
+df_grouped_conc["Isocaproate"] = isocaproate_const * df_grouped["Isocaproate"]
+
+# adjust logistic params A and B to match concentrations
+logistic_df_dict_conc = logistic_df_dict.copy()
+logistic_df_dict_conc["13C_Glucose"]["A"] = glc_const * logistic_df_dict["13C_Glucose"]["A"]
+logistic_df_dict_conc["13C_Glucose"]["B"] = glc_const * logistic_df_dict["13C_Glucose"]["B"]
+logistic_df_dict_conc["13C_Acetate"]["A"] = ace_const * logistic_df_dict["13C_Acetate"]["A"]
+logistic_df_dict_conc["13C_Acetate"]["B"] = ace_const * logistic_df_dict["13C_Acetate"]["B"]
+logistic_df_dict_conc["13C_Alanine"]["A"] = ala_const * logistic_df_dict["13C_Alanine"]["A"]
+logistic_df_dict_conc["13C_Alanine"]["B"] = ala_const * logistic_df_dict["13C_Alanine"]["B"]
+logistic_df_dict_conc["13C_Butyrate"]["A"] = but_const * logistic_df_dict["13C_Butyrate"]["A"]
+logistic_df_dict_conc["13C_Butyrate"]["B"] = but_const * logistic_df_dict["13C_Butyrate"]["B"]
+logistic_df_dict_conc["13C_Ethanol"]["A"] = eth_const * logistic_df_dict["13C_Ethanol"]["A"]
+logistic_df_dict_conc["13C_Ethanol"]["B"] = eth_const * logistic_df_dict["13C_Ethanol"]["B"]
+logistic_df_dict_conc["Arginine"]["A"] = arg_const * logistic_df_dict["Arginine"]["A"]
+logistic_df_dict_conc["Arginine"]["B"] = arg_const * logistic_df_dict["Arginine"]["B"]
+logistic_df_dict_conc["Histidine"]["A"] = his_const * logistic_df_dict["Histidine"]["A"]
+logistic_df_dict_conc["Histidine"]["B"] = his_const * logistic_df_dict["Histidine"]["B"]
+logistic_df_dict_conc["Methionine"]["A"] = met_const * logistic_df_dict["Methionine"]["A"]
+logistic_df_dict_conc["Methionine"]["B"] = met_const * logistic_df_dict["Methionine"]["B"]
+logistic_df_dict_conc["Threonine"]["A"] = thr_const * logistic_df_dict["Threonine"]["A"]
+logistic_df_dict_conc["Threonine"]["B"] = thr_const * logistic_df_dict["Threonine"]["B"]
+logistic_df_dict_conc["Tryptophan"]["A"] = trp_const * logistic_df_dict["Tryptophan"]["A"]
+logistic_df_dict_conc["Tryptophan"]["B"] = trp_const * logistic_df_dict["Tryptophan"]["B"]
+logistic_df_dict_conc["Proline"]["A"] = proline_const * logistic_df_dict["Proline"]["A"]
+logistic_df_dict_conc["Proline"]["B"] = proline_const * logistic_df_dict["Proline"]["B"]
+logistic_df_dict_conc["5-aminovalerate"]["A"] = fiveAV_const * logistic_df_dict["5-aminovalerate"]["A"]
+logistic_df_dict_conc["5-aminovalerate"]["B"] = fiveAV_const * logistic_df_dict["5-aminovalerate"]["B"]
+logistic_df_dict_conc["Isocaproate"]["A"] = isocaproate_const * logistic_df_dict["Isocaproate"]["A"]
+logistic_df_dict_conc["Isocaproate"]["B"] = isocaproate_const * logistic_df_dict["Isocaproate"]["B"]
+os.makedirs(os.path.join(input_dir, "logistic_params_conc"), exist_ok=True)
+for metab in logistic_df_dict_conc:
+    logistic_df_dict_conc[metab].to_csv(os.path.join(input_dir, "logistic_params_conc",
+            f"logistic_params_samples_{exp_name}_{metab.replace(' ', '_')}.csv"),
+            index=False)
+
+
+# NOTE: this still only plots glucose and its products
 
 # update logistic parameters
 all_logistic_preds_concs = all_logistic_preds.copy()

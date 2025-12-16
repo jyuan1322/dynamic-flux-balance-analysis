@@ -14,7 +14,7 @@ from att5_peak_selector2_sliders import interactive_peak_selector
 # read from config file
 config = configparser.ConfigParser()
 config.optionxform = str   # <-- turn off lowercasing
-config.read("Config_peak_match.ini")
+config.read("config.ini")
 
 # Close any existing plots (this also helps recover from Ctrl-C in previous run)
 plt.close('all')
@@ -89,6 +89,8 @@ plt.close('all')
 working_dir = config.get("paths", "working_dir")
 input_stack = os.path.join(working_dir, config.get("paths", "input_stack"))
 input_ref_peaks = os.path.join(working_dir, config.get("paths", "input_ref_peaks"))
+output_dir = config.get("paths", "output_dir")
+os.makedirs(output_dir, exist_ok=True)
 
 # for 1H
 # base_fit_window = 0.08
@@ -125,8 +127,11 @@ data = data.astype(float)
 ppm = data['ppm'].values
 traces = data.drop(columns='ppm').values
 n_traces = traces.shape[1]
-# try:
-#     real_times = df.iloc[1, 1:df.shape[0]].values.astype(float)
+try:
+    real_times = df.iloc[1, 1:df.shape[0]].values.astype(float)
+except:
+    real_times = None
+    print("No real times found, using trace indices as time.")
 # except:
 #     # standard solution, 102_13C
 #     real_times = df.iloc[1, 1:df.shape[0]].values
@@ -236,7 +241,7 @@ def calculate_area(data, label, ref_ppm, t, area_scaling_factor=1, real_times=No
         x_data = x_data[::-1]
         y_data = y_data[::-1]
 
-    nmr_fit_outfile = f"nmr_fit_{exp_name}_{label}_{ref_ppm}_{t}.pdf"
+    nmr_fit_outfile = os.path.join(output_dir, f"nmr_fit_{exp_name}_{label}_{ref_ppm}_{t}.pdf")
     # selected_peaks = interactive_peak_selector(x_data, y_data, comp_model,
     #                                         model_type="lorentzian",
     #                                         ref_ppm=ref_ppm,
@@ -252,10 +257,10 @@ def calculate_area(data, label, ref_ppm, t, area_scaling_factor=1, real_times=No
 
     # add the trace index and experiment name to the saved state
     window_state["trace_index"] = int(t)
-    if real_times is not None:
-        window_state["time"] = float(real_times[t])
-    else:
-        window_state["time"] = None
+    # if real_times is not None:
+    window_state["time"] = float(real_times[t])
+    # else:
+    #     window_state["time"] = None
     window_state["experiment_name"] = exp_name
     window_state["reference_peak"] = float(ref_ppm)
     window_state["metabolite"] = label
@@ -265,7 +270,7 @@ def calculate_area(data, label, ref_ppm, t, area_scaling_factor=1, real_times=No
     window_state_serializable = make_json_serializable(window_state)
     print(window_state_serializable)
 
-    json_outfile = f"nmr_fit_{exp_name}_{label}_{ref_ppm}_{t}.json"
+    json_outfile = os.path.join(output_dir, f"nmr_fit_{exp_name}_{label}_{ref_ppm}_{t}.json")
     with open(json_outfile, "w") as f:
         json.dump(window_state_serializable, f, indent=2)
     return window_state
@@ -315,7 +320,7 @@ for _, ref in ref_peaks.iterrows():
             # window_state = calculate_area(data={"ppm": ppm, "intensity": intensity}, label=label, ref_ppm=ref_ppm,
             window_state = calculate_area(data=data, label=label, ref_ppm=ref_ppm,
                                           t=t, area_scaling_factor=area_scaling_factor,
-                                          real_times=None, exp_name = exp_name, base_fit_window=base_fit_window,
+                                          real_times=real_times, exp_name = exp_name, base_fit_window=base_fit_window,
                                           prominence_factor=prominence_factor, init_bounds=init_bounds, seed=101)
             init_bounds = (window_state["lower_ppm_bound"], window_state["upper_ppm_bound"])
             # results.extend(results_sub)

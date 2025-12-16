@@ -23,7 +23,7 @@ import stan
 # read from config file
 config = configparser.ConfigParser()
 config.optionxform = str   # <-- turn off lowercasing
-config.read("Config_peak_match.ini")
+config.read("config.ini")
 
 input_dir = config['trajectories']['input_dir']
 exp_name = config['trajectories']['exp_name']
@@ -333,7 +333,7 @@ for i, target_col in enumerate(metabolites):
     print(target_col)
     logistic_df, corrected_times, scaled_concs = logistic_inference(df_grouped,
                                                                 target_col=target_col,
-                                                                exp_id="test_glc1H")
+                                                                exp_id=exp_name)
     logistic_pred_df = plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_col, color=colors[i])
     # Combine with previous results like cbind
     if all_logistic_preds is None:

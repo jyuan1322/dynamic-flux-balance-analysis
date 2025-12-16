@@ -17,6 +17,18 @@ micromamba create -f pystan-env.yml
 micromamba create -f nmr-env.yml
 ```
 
+On eris:
+
+```bash
+ssh -Y [username]@eris2n4.research.partners.org
+tmux
+srun -p interactive --mem=30G -t 3:00:00 --pty bash -l
+
+cd /data/bwh-comppath-lim/MA-host-microbiome
+git clone git@github.com:jyuan1322/dynamic-flux-balance-analysis.git
+
+```
+
 ---
 
 ## Project Structure
@@ -64,7 +76,18 @@ nmr-time-series/
 Run the [nmr-cdiff](https://github.com/Massachusetts-Host-Microbiome-Center/nmr-cdiff) procedure for processing the NMR spectra into a single xlsx file. Prior to this, activate the environment with
 
 ```bash
-micromamba activate nmr-env
+micromamba activate nmr
+cd /data/bwh-comppath-lim/MA-host-microbiome/nmr-cdiff/scripts/process
+python
+
+from process import Stack
+# s = Stack("/data/bwh-comppath-lim/MA-host-microbiome/experiments/Data7_13CGlc1/raw", "1H", "52")
+# s = Stack("/data/local/jy1008/MA-host-microbiome/UGA_HRMAS/Nov032025_UGA_HRMAS_13C_Cells", "1H", "31")
+s = Stack("/data/local/jy1008/MA-host-microbiome/NatChemBio_Data/LiveCellNMR-Cdiff/Data7_13CGlc1_Test/raw", "1H", "52")
+s.calibrate()
+s.process_fids()
+s.ridgetrace_fids()
+s.write_stack(from_ridges=True)
 ```
 
 ### Peak Fitting

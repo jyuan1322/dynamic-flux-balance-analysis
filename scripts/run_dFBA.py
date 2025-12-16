@@ -23,10 +23,12 @@ from dFBA_utils_JY import *
 # read from config file
 config = configparser.ConfigParser()
 config.optionxform = str   # <-- turn off lowercasing
-config.read("nmr_area_estimation/Config_peak_match.ini")
+config.read("config.ini")
 
 output_dir = config["dfba_params"]["output_dir"]
 os.makedirs(output_dir, exist_ok=True)
+
+exp_name = config["dfba_params"]["exp_name"]
 
 def get_time_correction(csv_path, isocaproate_col="Isocaproate 0.8479", smooth_sigma=1.0, thresh=0.05, plot=False):
     """
@@ -785,7 +787,7 @@ sim = dFBA(
 )
 
 sim.run()
-sim.export_results(prefix=os.path.join(config["dfba_params"]["output_dir"], f"dfba_{exp_id}"))
+sim.export_results(prefix=os.path.join(config["dfba_params"]["output_dir"], f"dfba_{exp_name}"))
 
 # plot resulting fluxes
 df = sim.solution_fluxes
@@ -818,7 +820,7 @@ df = df.join(fva_df)
 plt.rc('axes', prop_cycle=cycler('color', plt.cm.tab20.colors))
 # df_conc = plot_integrated_fluxes(df, reactions, initial_conc=0)
 plot_raw_fluxes(df, tracked_reactions, 
-                outname=os.path.join(config["dfba_params"]["output_dir"], f"dfba_flux_out_{exp_id}"), 
+                outname=os.path.join(config["dfba_params"]["output_dir"], f"dfba_flux_out_{exp_name}"), 
                 model=model, plot_bounds=False)
 
 # Grab interesting reactions
@@ -890,12 +892,12 @@ def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.htm
     fig.show()
 
 plot_raw_fluxes_html(flux_df, interesting_reactions, model=model,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_all_v4_{exp_id}.html'))
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_all_v4_{exp_name}.html'))
 plot_raw_fluxes_html(flux_df, bounding_reactions, model=model,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_bounding_v4_{exp_id}.html'))
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_bounding_v4_{exp_name}.html'))
 plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, model=model,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_gt2_v4_{exp_id}.html'))
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_gt2_v4_{exp_name}.html'))
 plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_lt2_v4_{exp_id}.html'))
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_lt2_v4_{exp_name}.html'))
 
-flux_df.to_csv(os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_id}.csv'))
+flux_df.to_csv(os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv'))

@@ -167,6 +167,8 @@ The output of the dFBA step comprises csv files storing the mean flux and the mi
 
 ## References
 
-* A Pavao et al. *Nat Chem Biol* (2023)
+* [A Pavao et al. *Nat Chem Biol* (2023)](https://pmc.ncbi.nlm.nih.gov/articles/PMC10154198)
+* [A Ebrahim et al. *BMC Syst Biol* (2013)](https://cobrapy.readthedocs.io/en/latest/faq.html)
+* [A Riddell et al. (2021)](https://pypi.org/project/pystan/)
 
 ---

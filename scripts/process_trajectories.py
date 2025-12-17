@@ -103,7 +103,8 @@ for metabolite, protons in proton_num.items():
 # plt.show()
 
 # write concentrations scaled by proton number
-df_grouped.to_csv(os.path.join(output_dir, f"{exp_name}_scaled_areas_10202025.csv"), index=False)
+os.makedirs(os.path.join(output_dir, "logistic_params"), exist_ok=True)
+df_grouped.to_csv(os.path.join(output_dir, "logistic_params", f"{exp_name}_scaled_areas_10202025.csv"), index=False)
 
 
 
@@ -135,7 +136,7 @@ def logistic_inference(df_grouped, target_col, exp_id):
 
     # return form pickle if it exists
     pickle_out = f"stan_logistic_samples_{exp_id}_{target_col.replace(' ', '_')}.pkl"
-    pickle_out = os.path.join(output_dir, pickle_out)
+    pickle_out = os.path.join(output_dir, "logistic_params", pickle_out)
     if os.path.exists(pickle_out):
         with open(pickle_out, "rb") as f:   # "rb" = read, binary mode
             logistic_df = pickle.load(f)
@@ -471,5 +472,5 @@ ax1.set_ylabel('Scaled Concentration (mMol)')
 ax1.legend()
 plt.tight_layout()
 output_trajct_fname = f"logistic_fits_concs_{exp_name}.pdf"
-plt.savefig(os.path.join(output_dir, output_trajct_fname))
+plt.savefig(os.path.join(output_dir, "logistic_params_conc", output_trajct_fname))
 plt.show()

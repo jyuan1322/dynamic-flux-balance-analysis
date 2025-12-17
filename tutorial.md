@@ -77,10 +77,9 @@ Run the [nmr-cdiff](https://github.com/Massachusetts-Host-Microbiome-Center/nmr-
 
 ```bash
 micromamba activate nmr
-cd /data/bwh-comppath-lim/MA-host-microbiome/nmr-cdiff/scripts/process
-python run_process.py
+python /data/local/nmr-cdiff/nmr-cdiff-preprocessing/scripts/process/run_process.py
 ```
-The script `run_process.py` performs preprocessing using parameters in `config_preprocessing.ini`, including input and output directories.
+The script `run_process.py` performs preprocessing using parameters in `nmr-cdiff-preprocessing/scripts/process/config_preprocessing.ini`, including input and output directories.
 
 ### Peak Fitting
 

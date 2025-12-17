@@ -22,7 +22,8 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
     fig, ax = plt.subplots(figsize=(10, 6))
     plt.subplots_adjust(bottom=0.3)  # space for widgets
 
-    ax.plot(x_data, y_data, "b.", label="Data")
+    ax.set_title(label)
+    ax.plot(x_data, y_data, "b.", label="Raw Spectrum Data")
     ax.set_xlabel("ppm")
     ax.set_ylabel("Intensity")
     ax.invert_xaxis()
@@ -47,7 +48,7 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
     vline_left = ax.axvline(s_left.val, color="g", linestyle="--")
     vline_right = ax.axvline(s_right.val, color="g", linestyle="--")
 
-    fit_line, = ax.plot([], [], "r-", lw=2, label="Refit")
+    fit_line, = ax.plot([], [], "r-", lw=2, label="Total Spectrum Refit")
 
     def update_lines(val=None):
         left, right = sorted([s_left.val, s_right.val])
@@ -194,12 +195,12 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
         for i in range(n_peaks):
             prefix = f'p{i}_'
             y_comp = composite_model.components[i].eval(result.params, x=x_sub)
-            line, = ax.plot(x_sub, y_comp, linestyle='--', lw=1.5, label=f'Peak {i+1}')
+            line, = ax.plot(x_sub, y_comp, linestyle='--', lw=1.5, label=f'Component Peak {i+1}')
             fig.component_lines.append(line)
 
         # Plot constant baseline
         y_baseline = result.params['bkg_c'].value * np.ones_like(x_sub)
-        line, = ax.plot(x_sub, y_baseline, linestyle=':', lw=1.5, color='k', label='Baseline')
+        line, = ax.plot(x_sub, y_baseline, linestyle=':', lw=1.5, color='k', label='Baseline (Intercept)')
         fig.component_lines.append(line)
 
         # Redraw axes
@@ -250,8 +251,14 @@ def interactive_peak_selector(x_data, y_data, ref_ppm, label,
         if hasattr(fig, "included_line"):
             fig.included_line.remove()
         fig.included_line, = ax.plot(
-            x_sub, included_sum, "m-", lw=2, label="Included peaks"
+            x_sub, included_sum, "m-", lw=2, label="Peaks Included in Area"
         )
+
+        # redraw legend to include new lines
+        handles, labels = ax.get_legend_handles_labels()
+        unique = dict(zip(labels, handles))
+        ax.legend(unique.values(), unique.keys())
+        fig.canvas.draw_idle()
 
     btn.on_clicked(on_button)
 

@@ -78,17 +78,9 @@ Run the [nmr-cdiff](https://github.com/Massachusetts-Host-Microbiome-Center/nmr-
 ```bash
 micromamba activate nmr
 cd /data/bwh-comppath-lim/MA-host-microbiome/nmr-cdiff/scripts/process
-python
-
-from process import Stack
-# s = Stack("/data/bwh-comppath-lim/MA-host-microbiome/experiments/Data7_13CGlc1/raw", "1H", "52")
-# s = Stack("/data/local/jy1008/MA-host-microbiome/UGA_HRMAS/Nov032025_UGA_HRMAS_13C_Cells", "1H", "31")
-s = Stack("/data/local/jy1008/MA-host-microbiome/NatChemBio_Data/LiveCellNMR-Cdiff/Data7_13CGlc1_Test/raw", "1H", "52")
-s.calibrate()
-s.process_fids()
-s.ridgetrace_fids()
-s.write_stack(from_ridges=True)
+python run_process.py
 ```
+The script `run_process.py` performs preprocessing using parameters in `config_preprocessing.ini`, including input and output directories.
 
 ### Peak Fitting
 

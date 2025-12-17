@@ -248,7 +248,7 @@ def calculate_area(data, label, ref_ppm, t, area_scaling_factor=1, real_times=No
     #                                         plot_label=label,
     #                                         savepath=nmr_fit_outfile)
     window_state = interactive_peak_selector(x_data, y_data,
-                                ref_ppm=ref_ppm, label=label,
+                                ref_ppm=ref_ppm, label=f"{label}, {ref_ppm}, fid {t}",
                                 init_bounds=init_bounds, seed=seed,
                                 prominence_factor=prominence_factor,
                                 base_fit_window=base_fit_window,

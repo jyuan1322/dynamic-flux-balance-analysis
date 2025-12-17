@@ -26,6 +26,8 @@ config.optionxform = str   # <-- turn off lowercasing
 config.read("config.ini")
 
 input_dir = config['trajectories']['input_dir']
+output_dir = config['trajectories']['output_dir']
+os.makedirs(output_dir, exist_ok=True)
 exp_name = config['trajectories']['exp_name']
 
 records = []
@@ -101,7 +103,7 @@ for metabolite, protons in proton_num.items():
 # plt.show()
 
 # write concentrations scaled by proton number
-df_grouped.to_csv(os.path.join(input_dir, f"{exp_name}_scaled_areas_10202025.csv"), index=False)
+df_grouped.to_csv(os.path.join(output_dir, f"{exp_name}_scaled_areas_10202025.csv"), index=False)
 
 
 
@@ -133,7 +135,7 @@ def logistic_inference(df_grouped, target_col, exp_id):
 
     # return form pickle if it exists
     pickle_out = f"stan_logistic_samples_{exp_id}_{target_col.replace(' ', '_')}.pkl"
-    pickle_out = os.path.join(input_dir, pickle_out)
+    pickle_out = os.path.join(output_dir, pickle_out)
     if os.path.exists(pickle_out):
         with open(pickle_out, "rb") as f:   # "rb" = read, binary mode
             logistic_df = pickle.load(f)
@@ -355,9 +357,9 @@ logistic_params = logistic_params.set_index("metab")
 
 
 # write logistic params for metabolites prior to scaling to mMol
-os.makedirs(os.path.join(input_dir, "logistic_params"), exist_ok=True)
+os.makedirs(os.path.join(output_dir, "logistic_params"), exist_ok=True)
 for metab in logistic_df_dict:
-    logistic_df_dict[metab].to_csv(os.path.join(input_dir, "logistic_params",
+    logistic_df_dict[metab].to_csv(os.path.join(output_dir, "logistic_params",
             f"logistic_params_samples_{exp_name}_{metab.replace(' ', '_')}.csv"),
             index=False)
 
@@ -373,7 +375,7 @@ ax1.set_ylabel('NMR area under peaks (a.u.)')
 ax1.legend()
 plt.tight_layout()
 output_trajct_fname = f"logistic_fits_raw_areas_{exp_name}.pdf"
-# plt.savefig(os.path.join(input_dir, output_trajct_fname))
+# plt.savefig(os.path.join(output_dir, output_trajct_fname))
 plt.show()
 
 df_grouped_conc = df_grouped.copy()
@@ -437,9 +439,9 @@ for metab, ratio_slope in config["scale_mMol_to_ratio"].items():
         all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
 
 # write logistic params for metabolites after scaling to mMol
-os.makedirs(os.path.join(input_dir, "logistic_params_conc"), exist_ok=True)
+os.makedirs(os.path.join(output_dir, "logistic_params_conc"), exist_ok=True)
 for metab in logistic_df_dict_conc:
-    logistic_df_dict_conc[metab].to_csv(os.path.join(input_dir, "logistic_params_conc",
+    logistic_df_dict_conc[metab].to_csv(os.path.join(output_dir, "logistic_params_conc",
             f"logistic_params_samples_{exp_name}_{metab.replace(' ', '_')}.csv"),
             index=False)
 
@@ -469,5 +471,5 @@ ax1.set_ylabel('Scaled Concentration (mMol)')
 ax1.legend()
 plt.tight_layout()
 output_trajct_fname = f"logistic_fits_concs_{exp_name}.pdf"
-plt.savefig(os.path.join(input_dir, output_trajct_fname))
+plt.savefig(os.path.join(output_dir, output_trajct_fname))
 plt.show()

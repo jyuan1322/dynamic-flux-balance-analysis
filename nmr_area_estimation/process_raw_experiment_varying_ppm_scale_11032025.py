@@ -31,12 +31,24 @@ def detect_nucleus(exp_dir):
 # base_dir = "/data/local/jy1008/MA-host-microbiome/UGA_HRMAS/Oct312025_UGA_HRMAS_13C_Cells_COMPLETE"
 base_dir = "/data/local/jy1008/MA-host-microbiome/UGA_HRMAS/Nov032025_UGA_HRMAS_13C_Cells"
 
+# 02/02/2026
+base_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/data/Jan302026_UGA_HRMAS_13C_Cells/raw"
+
 # Only include numeric directories (skip xlsx, txt, etc.)
 exp_dirs = sorted([d for d in glob.glob(os.path.join(base_dir, "*"))
                    if os.path.isdir(d) and os.path.basename(d).isdigit()])
 
-# traces_1H = None
-# traces_13C = None
+filtered_dirs = []
+
+for d in exp_dirs:
+    n = int(d.rstrip("/").split("/")[-1])
+    if n >= 23 and (n - 23) % 5 == 0:
+        filtered_dirs.append(d)
+
+exp_dirs = filtered_dirs
+
+traces_1H = None
+traces_13C = None
 spectra = {"1H": {}, "13C": {}}
 
 for exp_dir in exp_dirs:
@@ -64,23 +76,28 @@ for exp_dir in exp_dirs:
     # print(f"nucleus: {nucleus}")
     spectra[nucleus.strip('<>')][exp_name] = {"ppm": ppm, "intensity": intensity}
 
-    # # Initialize DataFrame with ppm axis
-    # if traces_1H is None and nucleus == "1H":
-    #     traces_1H = pd.DataFrame({"ppm": ppm})
-    # if traces_13C is None and nucleus == "13C":
-    #     traces_13C = pd.DataFrame({"ppm": ppm})
-    # 
-    # # Add intensity column
-    # if nucleus == "1H":
-    #     traces_1H[exp_name] = intensity
-    # elif nucleus == "13C":
-    #     traces_13C[exp_name] = intensity
+    # NOTE: If we can assume ppm axes are identical across experiments for each nucleus,
+    # we can store traces in DataFrames and write directly to Excel. Otherwise, we need
+    # to save as pickle.
+
+    # Initialize DataFrame with ppm axis
+    if traces_1H is None and nucleus == "1H":
+        traces_1H = pd.DataFrame({"ppm": ppm})
+    if traces_13C is None and nucleus == "13C":
+        traces_13C = pd.DataFrame({"ppm": ppm})
+    
+    # Add intensity column
+    if nucleus == "1H":
+        traces_1H[exp_name] = intensity
+    elif nucleus == "13C":
+        traces_13C[exp_name] = intensity
 
 # # --- Export ---
-# if traces_1H is not None:
-#     traces_1H.to_excel(os.path.join(base_dir, "traces_1H.xlsx"), index=False)
-# if traces_13C is not None:
-#     traces_13C.to_excel(os.path.join(base_dir, "traces_13C.xlsx"), index=False)
+# Only run this if ppm axes are identical across experiments (traces_1H and traces_13C are not None)
+if traces_1H is not None:
+    traces_1H.to_excel(os.path.join(base_dir, "traces_1H.xlsx"), index=False)
+if traces_13C is not None:
+    traces_13C.to_excel(os.path.join(base_dir, "traces_13C.xlsx"), index=False)
 
 # --- Save dictionaries as pickle ---
 for nucleus, nuc_dict in spectra.items():

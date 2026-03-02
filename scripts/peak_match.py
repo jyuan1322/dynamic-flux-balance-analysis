@@ -14,7 +14,8 @@ from att5_peak_selector2_sliders import interactive_peak_selector
 # read from config file
 config = configparser.ConfigParser()
 config.optionxform = str   # <-- turn off lowercasing
-config.read("config.ini")
+# config.read("config.ini")
+config.read("config_jan302026_UGA_HRMAS_13C_Cells.ini")
 
 # Close any existing plots (this also helps recover from Ctrl-C in previous run)
 plt.close('all')

@@ -23,7 +23,11 @@ from dFBA_utils_JY import *
 # read from config file
 config = configparser.ConfigParser()
 config.optionxform = str   # <-- turn off lowercasing
-config.read("config.ini")
+# config.read("config.ini")
+# 13C
+# config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells.ini")
+# 1H mixture (fid 25)
+config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells_1H_mixture.ini")
 
 output_dir = config["dfba_params"]["output_dir"]
 os.makedirs(output_dir, exist_ok=True)

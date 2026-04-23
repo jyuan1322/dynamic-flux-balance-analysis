@@ -111,7 +111,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 # Load data
 dfall = pd.read_csv(
-    "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Jan302026_UGA_HRMAS_13C_Cells/dfba_results/dfba_fluxes_all_raw_1H_mixture.csv"
+    "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Jan302026_UGA_HRMAS_13C_Cells/dfba_results/dfba_fluxes_all_raw_1H_standard.csv"
 )
 
 # Define multiple panels (each will become one PDF page)
@@ -152,7 +152,7 @@ panels = {
 }
 
 # Create multipage PDF
-with PdfPages("interesting_rxns_all_panels.pdf") as pdf:
+with PdfPages("interesting_rxns_all_panels_1H_standard.pdf") as pdf:
     for panel_name, panel_data in panels.items():
         rxns = panel_data["rxns"]
         labels = panel_data["labels"]

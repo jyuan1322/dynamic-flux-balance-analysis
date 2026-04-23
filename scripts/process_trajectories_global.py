@@ -25,9 +25,10 @@ config = configparser.ConfigParser()
 config.optionxform = str   # <-- turn off lowercasing
 # config.read("config.ini")
 # 13C
-config.read("config_feb052026_UGA_HRMAS_13C_Cells.ini")
+# config.read("config_feb052026_UGA_HRMAS_13C_Cells.ini")
 # 1H standards (fid 21)
 # config.read("config_feb052026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+config.read("config_jan302026_UGA_HRMAS_13C_Cells_1H_standard2.ini")
 # 1H mixture (fid 25)
 # config.read("config_feb052026_UGA_HRMAS_13C_Cells_1H_mixture.ini")
 
@@ -63,8 +64,14 @@ for fname in os.listdir(input_dir):
     metabolite = data["metabolite"]
     exp = data["experiment_name"]
 
+    print("Processing file:", fname)
+
+    if exp != exp_name:
+        print(f"Skipping {fname} with experiment name {exp} (looking for {exp_name})")
+        continue
+
     areas = data["fit_results"]["areas"]
-    n_traces = data["fit_results"]["n_traces"]
+    n_traces = data["fit_results"]["n_traces_total"]
 
     if len(areas) != n_traces:
         raise ValueError(
@@ -108,7 +115,13 @@ df_grouped = (
     .reset_index()
     .rename(columns={"time": "Time"})
 )
-
+print(df_grouped.columns)
+# plot subsets of metabolite trajectories
+# df_grouped = df_grouped[['Time', '13C_Glucose', '13C_Acetate', '13C_Alanine', '13C_Ethanol', 'NT_Acetate', 'NT_Ethanol']]
+# df_grouped = df_grouped[['Time', '13C_Glucose', 'NT_Isobutyrate', 'NT_Isocaproate', 'NT_Isoleucine', 'NT_Isovalerate', 'NT_Leucine']]
+# df_grouped = df_grouped[['Time', '13C_Glucose', '13C_Formate', 'NT_Formate', '13C_Lactate', 'NT_Pyruvate', '13C_Pyruvate', 'NT_Propionate']]
+# df_grouped = df_grouped[['Time', '13C_Glucose', 'NT_5-aminovalerate', 'NT_Proline']]
+# df_grouped = df_grouped[['Time', '13C_Glucose', 'NT_Arginine', 'NT_Cysteine', 'NT_Glycine', 'NT_Histidine', 'NT_Methionine', 'NT_Threonine', 'NT_Tryptophan']]
 
 # scale_to_mMol = True
 

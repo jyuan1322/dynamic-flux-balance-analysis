@@ -35,6 +35,7 @@ def global_model_lmfit_scaled(params, x_data, n_peaks, n_traces):
     """
     Peaks: shared parameters (center, sigma) across all FIDs
     Amplitude: one scaling per FID applied to the sum of all peaks
+    Baseline: single global baseline applied to all traces
     """
     result = np.zeros((len(x_data), n_traces))
     
@@ -53,27 +54,68 @@ def global_model_lmfit_scaled(params, x_data, n_peaks, n_traces):
         
         peak_sum += model.eval(temp_params, x=x_data)
     
-    # Scale sum by per-trace amplitude
+    # Get global baseline
+    baseline = params["baseline"].value
+    
+    # Scale sum by per-trace amplitude and add baseline
     for t in range(n_traces):
         amp_scale = params[f"amp_t{t}"].value
-        result[:, t] = amp_scale * peak_sum
+        result[:, t] = amp_scale * peak_sum + baseline
     
     return result
 
 
-def residual_global(params, x_data, y_data, n_peaks, n_traces):
-    """Residual function for global fit"""
-    model = global_model_lmfit_scaled(params, x_data, n_peaks, n_traces)
-    return (y_data - model).ravel()
+def residual_global(params, x_data, y_data, n_peaks, trace_indices):
+    """
+    Residual function for global fit
+    
+    Parameters
+    ----------
+    trace_indices : array-like
+        Indices of traces to include in the fit
+    """
+    n_traces = len(trace_indices)
+    result = np.zeros((len(x_data), n_traces))
+    
+    # Compute sum of all peaks (unscaled)
+    peak_sum = np.zeros_like(x_data)
+    for i in range(n_peaks):
+        prefix = f"p{i}_"
+        center = params[prefix + "center"].value
+        sigma  = params[prefix + "sigma"].value
+        
+        model = LorentzianModel(prefix=prefix)
+        temp_params = Parameters()
+        temp_params.add(prefix + 'amplitude', value=1.0)
+        temp_params.add(prefix + 'center', value=center)
+        temp_params.add(prefix + 'sigma', value=sigma)
+        
+        peak_sum += model.eval(temp_params, x=x_data)
+    
+    # Get global baseline
+    baseline = params["baseline"].value
+    
+    # Scale sum by per-trace amplitude and add baseline
+    for i, t in enumerate(trace_indices):
+        amp_scale = params[f"amp_t{t}"].value
+        result[:, i] = amp_scale * peak_sum + baseline
+    
+    return (y_data - result).ravel()
 
 def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
                                      prominence_factor=0.05, base_fit_window=0.04,
                                      area_scaling_factor=1.0,
                                      init_bounds=None, seed=101, savepath=None,
-                                     trace_indices=None, real_times=None):
+                                     trace_indices=None, real_times=None, trace_mask=None):
     """
     Interactive viewer with global fitting across all FIDs.
-    Uses lmfit's PseudoVoigtModel for correct normalization.
+    Uses lmfit's LorentzianModel with a single global baseline.
+    
+    Parameters
+    ----------
+    trace_mask : array-like of bool, optional
+        Boolean mask of shape (n_traces,). True = include in fit, False = exclude.
+        Excluded traces will have their areas reported as 0.
     """
     
     # Ensure ascending x for fitting
@@ -81,33 +123,69 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
         x_data = x_data[::-1]
         y_data_all = y_data_all[::-1, :]
     
-    n_traces = y_data_all.shape[1]
+    n_traces_total = y_data_all.shape[1]
+    
+    # Create trace mask if not provided (default: include all)
+    if trace_mask is None:
+        trace_mask = np.ones(n_traces_total, dtype=bool)
+    else:
+        trace_mask = np.array(trace_mask, dtype=bool)
+        if len(trace_mask) != n_traces_total:
+            raise ValueError(f"trace_mask length ({len(trace_mask)}) must match number of traces ({n_traces_total})")
+    
+    # Separate active traces (for fitting) from all traces
+    active_indices = np.where(trace_mask)[0]
+    n_traces = len(active_indices)  # Number of traces to actually fit
+    
+    print(f"\nTrace masking: {n_traces} active traces out of {n_traces_total} total")
+    print(f"Active trace indices: {active_indices.tolist()}")
+    
     if trace_indices is None:
-        trace_indices = list(range(n_traces))
+        trace_indices = list(range(n_traces_total))
     
     # Initial plot
     fig, ax_main = plt.subplots(1, 1, figsize=(12, 6))
     plt.subplots_adjust(bottom=0.30, left=0.1, right=0.85)
 
     
-    ax_main.set_title(f"{label} - Global Fit Across {n_traces} FIDs")
+    ax_main.set_title(f"{label} - Global Fit: {n_traces}/{n_traces_total} Active Traces")
     ax_main.set_xlabel("ppm")
     ax_main.set_ylabel("Intensity")
     ax_main.invert_xaxis()
     
-    # Plot a subset of traces for clarity
-    n_display = min(10, n_traces)
-    display_indices = np.linspace(0, n_traces-1, n_display, dtype=int)
-    colors = plt.cm.viridis(np.linspace(0, 1, n_display))
+    # Plot a subset of traces for clarity (prefer active traces)
+    n_display = min(10, n_traces_total)
+    
+    # Prioritize showing active traces
+    if n_traces <= n_display:
+        # Show all active traces plus some inactive ones
+        display_indices = list(active_indices)
+        inactive_indices = np.where(~trace_mask)[0]
+        remaining_slots = n_display - n_traces
+        if remaining_slots > 0 and len(inactive_indices) > 0:
+            n_inactive_show = min(remaining_slots, len(inactive_indices))
+            inactive_show = np.linspace(0, len(inactive_indices)-1, n_inactive_show, dtype=int)
+            display_indices.extend(inactive_indices[inactive_show].tolist())
+        display_indices = np.array(display_indices)
+    else:
+        # Show subset of active traces
+        display_indices = active_indices[np.linspace(0, n_traces-1, n_display, dtype=int)]
+    
+    colors = plt.cm.viridis(np.linspace(0, 1, len(display_indices)))
     
     data_lines = []
     fit_lines = []
     
     for i, t in enumerate(display_indices):
-        line_data, = ax_main.plot(x_data, y_data_all[:, t], '.', 
-                                   alpha=0.6, color=colors[i], markersize=3,
-                                   label=f"Trace {t}")
-        line_fit, = ax_main.plot([], [], '-', color=colors[i], lw=2)
+        is_active = trace_mask[t]
+        alpha = 0.6 if is_active else 0.2
+        marker_style = '.' if is_active else 'x'
+        label_suffix = "" if is_active else " (masked)"
+        
+        line_data, = ax_main.plot(x_data, y_data_all[:, t], marker_style, 
+                                   alpha=alpha, color=colors[i], markersize=3,
+                                   label=f"Trace {t}{label_suffix}")
+        line_fit, = ax_main.plot([], [], '-', color=colors[i], lw=2, alpha=alpha)
         
         data_lines.append(line_data)
         fit_lines.append(line_fit)
@@ -170,8 +248,11 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
         x_sub = x_data[mask]
         y_sub = y_data_all[mask, :]
         
-        # Peak detection on the mean spectrum
-        y_mean = np.mean(y_sub, axis=1)
+        # Extract only active traces for fitting
+        y_sub_active = y_sub[:, active_indices]
+        
+        # Peak detection on the mean spectrum of ACTIVE traces only
+        y_mean = np.mean(y_sub_active, axis=1)
         peaks_idx, _ = find_peaks(
             y_mean, prominence=prominence_factor * (y_mean.max() - y_mean.min())
         )
@@ -215,16 +296,20 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
             params.add(prefix + "sigma", value=0.005 * np.random.uniform(0.8, 1.2),
                     min=0.001, max=0.03)
 
-        # Per-FID amplitude
-        for t in range(n_traces):
+        # Single global baseline
+        baseline_guess = np.min(y_sub_active)
+        params.add("baseline", value=baseline_guess)
+
+        # Per-FID amplitude (only for active traces)
+        for t in active_indices:
             y_t = y_sub[:, t]
             amp_guess = (y_t.max() - y_t.min())  # rough guess for scaling
             params.add(f"amp_t{t}", value=amp_guess, min=0)
         
-        # Fit peaks globally
+        # Fit peaks globally (only active traces)
         print("Fitting... (this may take a moment)")
         result = minimize(residual_global, params, 
-                         args=(x_sub, y_sub, n_peaks, n_traces),
+                         args=(x_sub, y_sub_active, n_peaks, active_indices),
                          method='leastsq')
         
         print(f"\nFit complete!")
@@ -234,7 +319,28 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
         
         # Extract results
         fitted_params = result.params
-        y_fit = global_model_lmfit_scaled(fitted_params, x_sub, n_peaks, n_traces)
+        
+        # Compute fitted values for active traces
+        y_fit_active = np.zeros((len(x_sub), n_traces))
+        peak_sum = np.zeros_like(x_sub)
+        for i in range(n_peaks):
+            prefix = f"p{i}_"
+            center = fitted_params[prefix + "center"].value
+            sigma = fitted_params[prefix + "sigma"].value
+            
+            model = LorentzianModel(prefix=prefix)
+            temp_params = Parameters()
+            temp_params.add(prefix + 'amplitude', value=1.0)
+            temp_params.add(prefix + 'center', value=center)
+            temp_params.add(prefix + 'sigma', value=sigma)
+            
+            peak_sum += model.eval(temp_params, x=x_sub)
+        
+        baseline = fitted_params["baseline"].value
+        
+        for i, t in enumerate(active_indices):
+            amp_scale = fitted_params[f"amp_t{t}"].value
+            y_fit_active[:, i] = amp_scale * peak_sum + baseline
         
         # Print shared peak parameters
         print(f"\n{'='*80}")
@@ -244,34 +350,41 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
             prefix = f"p{i}_"
             center = fitted_params[prefix + "center"].value
             sigma = fitted_params[prefix + "sigma"].value
-            # fraction = fitted_params[prefix + "fraction"].value
             print(f"Peak {i+1}:")
             print(f"  Center: {center:.5f} ppm")
             print(f"  Sigma (width): {sigma:.5f}")
-            # print(f"  Fraction (Lorentzian): {fraction:.3f}")
+        
+        # Print baseline
+        baseline = fitted_params["baseline"].value
+        print(f"\nGlobal Baseline: {baseline:.5e}")
         
         # Calculate areas for each trace
-        # With lmfit's PseudoVoigt, the 'amplitude' parameter IS the area!
         print(f"\n{'='*80}")
         print("AREAS BY TRACE:")
         print(f"{'='*80}")
         
         inner_mask = (x_sub >= left) & (x_sub <= right)
+        x_inner = x_sub[inner_mask]
         areas = []
         
-        for t in range(n_traces):
-            total_area = 0.0
+        # Calculate for ALL traces (not just active ones)
+        for t in range(n_traces_total):
+            if not trace_mask[t]:
+                # Masked trace - report zero area
+                areas.append(0.0)
+                time_label = f"{real_times[t]:.1f}" if real_times is not None else str(t)
+                print(f"Trace {t:3d} (t={time_label:>6s}): MASKED - Area = 0.0")
+                continue
+            
+            # Active trace - calculate area
+            peak_area = 0.0
             for i in range(n_peaks):
                 prefix = f"p{i}_"
                 center = fitted_params[prefix + "center"].value
                 
                 if left <= center <= right:
-                    # For lmfit's PseudoVoigt, amplitude IS the area
-                    # But we still need to integrate only the part within bounds
-                    # amp = fitted_params[f"{prefix}amp_t{t}"].value
                     amp = fitted_params[f"amp_t{t}"].value
                     sigma = fitted_params[prefix + "sigma"].value
-                    # fraction = fitted_params[prefix + "fraction"].value
                     
                     # Create temporary model and params for this peak
                     model = LorentzianModel(prefix=prefix)
@@ -279,19 +392,33 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
                     temp_params.add(prefix + 'amplitude', value=amp)
                     temp_params.add(prefix + 'center', value=center)
                     temp_params.add(prefix + 'sigma', value=sigma)
-                    # temp_params.add(prefix + 'fraction', value=fraction)
                     
                     # Evaluate and integrate
-                    y_peak = model.eval(temp_params, x=x_sub[inner_mask])
-                    total_area += np.trapz(y_peak, x_sub[inner_mask])
+                    y_peak = model.eval(temp_params, x=x_inner)
+                    peak_area += np.trapz(y_peak, x_inner)
             
+            # Add baseline contribution if above zero
+            baseline_area = 0.0
+            if baseline > 0:
+                # Rectangle: height * width
+                baseline_area = baseline * (right - left)
+            
+            total_area = peak_area + baseline_area
             areas.append(total_area)
+            
             time_label = f"{real_times[t]:.1f}" if real_times is not None else str(t)
-            print(f"Trace {t:3d} (t={time_label:>6s}): {total_area:12.4e}")
+            print(f"Trace {t:3d} (t={time_label:>6s}): Peak={peak_area:12.4e}, Baseline={baseline_area:12.4e}, Total={total_area:12.4e}")
         
-        # Update plots
+        # Update plots (only for displayed traces)
         for i, t in enumerate(display_indices):
-            fit_lines[i].set_data(x_sub, y_fit[:, t])
+            if trace_mask[t]:
+                # Find position in active_indices
+                active_pos = np.where(active_indices == t)[0]
+                if len(active_pos) > 0:
+                    fit_lines[i].set_data(x_sub, y_fit_active[:, active_pos[0]])
+            else:
+                # Masked trace - no fit line
+                fit_lines[i].set_data([], [])
         
         # Plot individual peak components on the first trace
         if hasattr(fig, 'component_lines'):
@@ -299,17 +426,15 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
                 line.remove()
         fig.component_lines = []
         
-        # Find trace with largest max intensity inside fitting window
-        # t_example = display_indices[0]
-        max_vals = np.max(y_sub, axis=0)   # shape: (n_traces,)
-        t_example = np.argmax(max_vals)
+        # Find trace with largest max intensity inside fitting window (among active traces)
+        max_vals = np.max(y_sub_active, axis=0)
+        t_example_pos = np.argmax(max_vals)
+        t_example = active_indices[t_example_pos]
         
         for i in range(n_peaks):
             prefix = f"p{i}_"
             center = fitted_params[prefix + "center"].value
             sigma = fitted_params[prefix + "sigma"].value
-            # fraction = fitted_params[prefix + "fraction"].value
-            # amp = fitted_params[f"{prefix}amp_t{t_example}"].value
             amp = fitted_params[f"amp_t{t_example}"].value
             
             # Use lmfit model for correct evaluation
@@ -318,18 +443,17 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
             temp_params.add(prefix + 'amplitude', value=amp)
             temp_params.add(prefix + 'center', value=center)
             temp_params.add(prefix + 'sigma', value=sigma)
-            # temp_params.add(prefix + 'fraction', value=fraction)
             
-            y_comp = model.eval(temp_params, x=x_sub)
+            y_comp = model.eval(temp_params, x=x_sub) + baseline
             line, = ax_main.plot(x_sub, y_comp, '--', lw=1.5, alpha=0.7,
                                 label=f'Peak {i+1} (trace {t_example})')
             fig.component_lines.append(line)
         
-        # Baseline for first trace
-        # y_baseline = fitted_params[f"bkg_t{t_example}"].value * np.ones_like(x_sub)
-        # line, = ax_main.plot(x_sub, y_baseline, ':', lw=1.5, color='k',
-        #                     label=f'Baseline (trace {t_example})')
-        # fig.component_lines.append(line)
+        # Plot global baseline
+        y_baseline = baseline * np.ones_like(x_sub)
+        line, = ax_main.plot(x_sub, y_baseline, ':', lw=2, color='k',
+                            label=f'Global Baseline')
+        fig.component_lines.append(line)
         
         # Update axes
         ax_main.relim()
@@ -350,29 +474,32 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
             component_params.append({
                 "center": fitted_params[prefix + "center"].value,
                 "sigma": fitted_params[prefix + "sigma"].value,
-                # "fraction": fitted_params[prefix + "fraction"].value,
             })
         
         amplitudes_by_trace = []
-        # baselines_by_trace = []
         
-        for t in range(n_traces):
-            # amps = [fitted_params[f"p{i}_amp_t{t}"].value for i in range(n_peaks)]
-            amps = [fitted_params[f"amp_t{t}"].value for i in range(n_peaks)]
+        # Save amplitudes for ALL traces (None for masked ones)
+        for t in range(n_traces_total):
+            if trace_mask[t]:
+                amps = [fitted_params[f"amp_t{t}"].value for i in range(n_peaks)]
+            else:
+                amps = [None] * n_peaks  # Masked trace
             amplitudes_by_trace.append(amps)
-            # baselines_by_trace.append(fitted_params[f"bkg_t{t}"].value)
         
         window_state["fit_results"] = {
             "x": x_sub,
-            "y_fit": y_fit,
+            "y_fit_active": y_fit_active,
+            "active_indices": active_indices.tolist(),
+            "trace_mask": trace_mask.tolist(),
             "component_params": component_params,
             "amplitudes_by_trace": amplitudes_by_trace,
-            # "baselines_by_trace": baselines_by_trace,
+            "baseline": baseline,
             "areas": areas,
             "chisqr": result.chisqr,
             "redchi": result.redchi,
             "n_peaks": n_peaks,
-            "n_traces": n_traces
+            "n_traces": n_traces,
+            "n_traces_total": n_traces_total
         }
     
     btn.on_clicked(on_button)

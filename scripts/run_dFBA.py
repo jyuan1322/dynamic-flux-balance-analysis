@@ -906,3 +906,81 @@ plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model,
                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_lt2_v4_{exp_name}.html'))
 
 flux_df.to_csv(os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv'))
+
+
+
+
+
+
+
+# Compare to NatChemBio Figure 3
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
+# Load data
+dfall = pd.read_csv(
+    os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv')
+)
+
+# Define multiple panels (each will become one PDF page)
+panels = {
+    "panel_b": {
+        "rxns": ["ID_469", "ID_366", "ID_146", "ID_321"],
+        "labels": ["cystathionine", "isovalerate kinase",
+                   "2-methylbutyrate kinase", "isobutyrate kinase"],
+    },
+    "panel_c": {
+        "rxns": ["ID_233", "ID_53", "ID_280"],
+        "labels": ["PGK", "PFOR", "acetate kinase"],
+    },
+    "panel_d": {
+        "rxns": ["ID_648"],
+        "labels": ["hydrogenase"],
+    },
+    "panel_e": {
+        "rxns": ["ICCoA-DHG-EB", "ID_314"],
+        "labels": ["icocaprenoyl-CoA reductase", "Proline reductase"],
+    },
+    "panel_f": {
+        "rxns": ["ID_383", "ID_251"],
+        "labels": ["ethanol dehydrogenase", "butyrate kinase"],
+    },
+    "panel_g": {
+        "rxns": ["ID_326"],
+        "labels": ["acetyl-CoA synthetase"],
+    },
+    "panel_h": {
+        "rxns": ["ATPsynth4_1", "RNF-Complex"],
+        "labels": ["ATP synthase", "RNF complex"],
+    },
+    "panel_i": {
+        "rxns": ["ALT_2abut", "ID_575"],
+        "labels": ["alanine transaminase", "glutamate dehydrogenase"],
+    },
+}
+
+# Create multipage PDF
+pdf_out = os.path.join(config["dfba_params"]["output_dir"], f'interesting_rxns_all_panels_{exp_name}.pdf')
+with PdfPages(pdf_out) as pdf:
+    for panel_name, panel_data in panels.items():
+        rxns = panel_data["rxns"]
+        labels = panel_data["labels"]
+        rxn_dict = dict(zip(rxns, labels))
+
+        plt.figure(figsize=(8, 4))
+
+        for rxn in rxns:
+            plt.plot(dfall["Time"], dfall[rxn], label=rxn_dict[rxn])
+
+        plt.xlabel("Time")
+        plt.ylabel("Flux value")
+        plt.title(panel_name)
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+
+        pdf.savefig()   # saves current figure as a new page
+        plt.close()
+
+print("Saved multi-page PDF: interesting_rxns_all_panels.pdf")

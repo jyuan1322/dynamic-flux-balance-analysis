@@ -20,6 +20,20 @@ import stan
 from dFBA_JY import dFBA, MetaboliteConstraint
 from dFBA_utils_JY import *
 
+
+
+import pandas as pd
+import numpy as np
+from scipy.interpolate import interp1d
+
+def bounds_from_csv(csv_path):
+    df = pd.read_csv(csv_path)
+    lower_fn = interp1d(df["time"], df["lower"], bounds_error=False, fill_value=(df["lower"].iloc[0], df["lower"].iloc[-1]))
+    upper_fn = interp1d(df["time"], df["upper"], bounds_error=False, fill_value=(df["upper"].iloc[0], df["upper"].iloc[-1]))
+    return lambda t: (float(lower_fn(t)), float(upper_fn(t)))
+
+
+
 # read from config file
 config = configparser.ConfigParser()
 config.optionxform = str   # <-- turn off lowercasing
@@ -727,13 +741,35 @@ modelfile = config["dfba_params"]["modelfile"]
 model = cb.io.load_json_model(modelfile)
 model.objective = objective
 
+##### Match Aidan's default bounds from load_model
+for rxn in model.reactions:
+    if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
+        rxn.upper_bound *= 0.03
+    if rxn.id in ['Ex_valL', 'Ex_ileL']:
+        rxn.upper_bound = 0
+model.reactions.Ex_glc.upper_bound = 0
+model.reactions.Ex_cysL.upper_bound = 1000
+model.solver = 'glpk'
+
+
+# 5/4/2026 Replace this section with constraints from file (Aidan's bounds)
+# constraints = {}
+# dfba_consts = {k:v for k, v in config["dfba_constraints"].items()}
+# for constraint, const_file in dfba_consts.items():
+#     lg_df = pd.read_csv(os.path.join(config["dfba_params"]["logistic_param_dir"], const_file))
+#     flip_sign = constraint.startswith("Ex_")  # flip sign for uptake constraints
+#     flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=flip_sign)
+#     constraints[constraint] = MetaboliteConstraint(constraint, flux_fn)
 constraints = {}
 dfba_consts = {k:v for k, v in config["dfba_constraints"].items()}
 for constraint, const_file in dfba_consts.items():
-    lg_df = pd.read_csv(os.path.join(config["dfba_params"]["logistic_param_dir"], const_file))
-    flip_sign = constraint.startswith("Ex_")  # flip sign for uptake constraints
-    flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=flip_sign)
-    constraints[constraint] = MetaboliteConstraint(constraint, flux_fn)
+    print(f"Loading constraint {constraint} from {const_file}")
+    constraints[constraint] = MetaboliteConstraint(
+        constraint, 
+        bounds_from_csv(os.path.join(config["dfba_params"]["aidan_bounds_dir"], const_file))
+    )
+
+
 """
 constraints = {
     "Ex_glc": MetaboliteConstraint("Ex_glc", glc_flux_fn),
@@ -772,10 +808,13 @@ print(tracked_reactions)
 # ID_135: proL_c --> proD_c (proline racemase)
 # ID_314: proline --> 5-aminovalerate
 
+# debug vs Aidan's version: fba_method=lambda m: m.optimize() instead of pfba
+
 sim = dFBA(
     model=model,
     objective=objective,
     constraints=constraints,
+    fba_method=lambda m: m.optimize(),
     time_range=tuple(map(float, time_range.split(","))),
     steps_per_hour=int(config["dfba_params"]["steps_per_hour"]), # 5
     # tracked_reactions=["ATP_sink", "ID_314", "ID_135"],
@@ -923,6 +962,36 @@ dfall = pd.read_csv(
     os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv')
 )
 
+
+
+"""
+ID_233: phosphoglycerate kinase
+ID_53: pyruvate:ferredoxin oxidoreductase
+ID_280: acetate kinase
+ID_326: CO-methylating acetyl-CoA synthase
+RNF-Complex: RNF Complex (PMF-generating)
+ID_336: L-alanine:2-oxoglutarate aminotransferase
+ID_366: isopentanoylphosphate phosphotransferase
+ICCoA-DHG-EB: 2-isocaprenoyl-CoA dehydrogenase (electron-bifurcating)
+ID_314: D-proline reductase
+ID_383: ethanol dehydrogenase
+BUK: Butyrate kinase
+HydEB: Hydrogenase (electron-bifurcating)
+ATP_sink: ATP hydrolysis objective
+ATPsynth4_1: ATP synthase 4:1
+ID_575: L-glutamate:NAD+ oxidoreductase (deaminating)
+ID_469: cystathionine gamma-lyase
+ID_146: 2-methylbutanoyl phosphate transferase
+ID_321: Isobutyric acid phosphotransferase
+ID_252: ATP:pyruvate 2-O-phosphotransferase
+ID_407: phosphoenolpyruvate kinase (UDP)
+ID_582: phosphoenolpyruvate kinase (CDP)
+ID_1: phosphoenolpyruvate kinase (IDP)
+Ex_biomass: Exchange Biomass
+Sec_exopoly: Exopolysaccharide secretion
+"""
+
+
 # Define multiple panels (each will become one PDF page)
 panels = {
     "panel_b": {
@@ -935,7 +1004,7 @@ panels = {
         "labels": ["PGK", "PFOR", "acetate kinase"],
     },
     "panel_d": {
-        "rxns": ["ID_648"],
+        "rxns": ["HydEB"],
         "labels": ["hydrogenase"],
     },
     "panel_e": {
@@ -943,7 +1012,7 @@ panels = {
         "labels": ["icocaprenoyl-CoA reductase", "Proline reductase"],
     },
     "panel_f": {
-        "rxns": ["ID_383", "ID_251"],
+        "rxns": ["ID_383", "BUK"],
         "labels": ["ethanol dehydrogenase", "butyrate kinase"],
     },
     "panel_g": {
@@ -955,7 +1024,7 @@ panels = {
         "labels": ["ATP synthase", "RNF complex"],
     },
     "panel_i": {
-        "rxns": ["ALT_2abut", "ID_575"],
+        "rxns": ["ID_336", "ID_575"],
         "labels": ["alanine transaminase", "glutamate dehydrogenase"],
     },
 }

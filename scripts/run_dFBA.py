@@ -935,7 +935,7 @@ panels = {
         "labels": ["PGK", "PFOR", "acetate kinase"],
     },
     "panel_d": {
-        "rxns": ["ID_648"],
+        "rxns": ["HydEB"],
         "labels": ["hydrogenase"],
     },
     "panel_e": {
@@ -943,7 +943,7 @@ panels = {
         "labels": ["icocaprenoyl-CoA reductase", "Proline reductase"],
     },
     "panel_f": {
-        "rxns": ["ID_383", "ID_251"],
+        "rxns": ["ID_383", "BUK"],
         "labels": ["ethanol dehydrogenase", "butyrate kinase"],
     },
     "panel_g": {
@@ -955,7 +955,7 @@ panels = {
         "labels": ["ATP synthase", "RNF complex"],
     },
     "panel_i": {
-        "rxns": ["ALT_2abut", "ID_575"],
+        "rxns": ["ID_336", "ID_575"],
         "labels": ["alanine transaminase", "glutamate dehydrogenase"],
     },
 }

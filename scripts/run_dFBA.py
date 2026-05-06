@@ -727,6 +727,16 @@ modelfile = config["dfba_params"]["modelfile"]
 model = cb.io.load_json_model(modelfile)
 model.objective = objective
 
+##### Match Aidan's default bounds from load_model
+# for rxn in model.reactions:
+#     if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
+#         rxn.upper_bound *= 0.03
+#     if rxn.id in ['Ex_valL', 'Ex_ileL']:
+#         rxn.upper_bound = 0
+# model.reactions.Ex_glc.upper_bound = 0
+# model.reactions.Ex_cysL.upper_bound = 1000
+# model.solver = 'glpk'
+
 constraints = {}
 dfba_consts = {k:v for k, v in config["dfba_constraints"].items()}
 for constraint, const_file in dfba_consts.items():
@@ -776,6 +786,7 @@ sim = dFBA(
     model=model,
     objective=objective,
     constraints=constraints,
+    fba_method=lambda m: m.optimize(),
     time_range=tuple(map(float, time_range.split(","))),
     steps_per_hour=int(config["dfba_params"]["steps_per_hour"]), # 5
     # tracked_reactions=["ATP_sink", "ID_314", "ID_135"],
@@ -920,8 +931,20 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 # Load data
 dfall = pd.read_csv(
-    os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv')
+    # os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv')
+    os.path.join(config["dfba_params"]["output_dir"], f'dfba_{exp_name}_fluxes.csv')
 )
+dfall = dfall.rename(columns={"Unnamed: 0": "Time"})
+dfmin = pd.read_csv(
+    os.path.join(config["dfba_params"]["output_dir"], f'dfba_{exp_name}_fva_min.csv')
+)
+dfmin = dfmin.rename(columns={"Unnamed: 0": "Time"})
+dmax = pd.read_csv(
+    os.path.join(config["dfba_params"]["output_dir"], f'dfba_{exp_name}_fva_max.csv')
+)
+dmax = dmax.rename(columns={"Unnamed: 0": "Time"})
+
+
 
 # Define multiple panels (each will become one PDF page)
 panels = {
@@ -929,34 +952,50 @@ panels = {
         "rxns": ["ID_469", "ID_366", "ID_146", "ID_321"],
         "labels": ["cystathionine", "isovalerate kinase",
                    "2-methylbutyrate kinase", "isobutyrate kinase"],
+        "flip": [],
+        "colors": ["#f542ef", "#4ef542", "#cbf542", "#257d56"]
     },
     "panel_c": {
         "rxns": ["ID_233", "ID_53", "ID_280"],
         "labels": ["PGK", "PFOR", "acetate kinase"],
+        "flip": ["ID_233"],
+        "colors": ["#7700ff", "#f205de", "#f20505"]
     },
     "panel_d": {
         "rxns": ["HydEB"],
         "labels": ["hydrogenase"],
+        "flip": ["HydEB"],
+        "colors": ["#f29407"]
     },
     "panel_e": {
         "rxns": ["ICCoA-DHG-EB", "ID_314"],
         "labels": ["icocaprenoyl-CoA reductase", "Proline reductase"],
+        "flip": [],
+        "colors": ["#f505e9", "#a3051a"]
     },
     "panel_f": {
         "rxns": ["ID_383", "BUK"],
         "labels": ["ethanol dehydrogenase", "butyrate kinase"],
+        "flip": ["ID_383"],
+        "colors": ["#05f519", "#d9d904"]
     },
     "panel_g": {
         "rxns": ["ID_326"],
         "labels": ["acetyl-CoA synthetase"],
+        "flip": [],
+        "colors": ["#02f0ec"]
     },
     "panel_h": {
         "rxns": ["ATPsynth4_1", "RNF-Complex"],
         "labels": ["ATP synthase", "RNF complex"],
+        "flip": [],
+        "colors": ["#a19f9f", "#525151"]
     },
     "panel_i": {
         "rxns": ["ID_336", "ID_575"],
         "labels": ["alanine transaminase", "glutamate dehydrogenase"],
+        "flip": ["ID_336"],
+        "colors": ["#0f07f2", "#02d7f7"]
     },
 }
 
@@ -970,8 +1009,33 @@ with PdfPages(pdf_out) as pdf:
 
         plt.figure(figsize=(8, 4))
 
-        for rxn in rxns:
-            plt.plot(dfall["Time"], dfall[rxn], label=rxn_dict[rxn])
+        for rxn, color in zip(rxns, panel_data.get("colors", [None] * len(rxns))):
+            flip = -1 if rxn in panel_data.get("flip", []) else 1
+            
+            optimal = flip * dfall[rxn]
+            fva_min = flip * dfmin[rxn]
+            fva_max = flip * dmax[rxn]
+            
+            fva_lower = fva_min.combine(fva_max, min)
+            fva_upper = fva_min.combine(fva_max, max)
+            
+            opt_min = optimal.min()
+            opt_max = optimal.max()
+            lower_clip = opt_min * 1.05 if opt_min < 0 else opt_min / 1.05
+            upper_clip = opt_max * 1.05 if opt_max > 0 else opt_max / 1.05
+            
+            fva_lower = fva_lower.clip(lower=lower_clip)
+            fva_upper = fva_upper.clip(upper=upper_clip)
+            
+            line, = plt.plot(dfall["Time"], optimal, label=rxn_dict[rxn], color=color)
+            if rxn in dfmin.columns and rxn in dmax.columns:
+                plt.fill_between(
+                    dfall["Time"],
+                    fva_lower,
+                    fva_upper,
+                    color=line.get_color(),
+                    alpha=0.2
+                )
 
         plt.xlabel("Time")
         plt.ylabel("Flux value")
@@ -980,7 +1044,7 @@ with PdfPages(pdf_out) as pdf:
         plt.grid(True)
         plt.tight_layout()
 
-        pdf.savefig()   # saves current figure as a new page
+        pdf.savefig()
         plt.close()
 
 print("Saved multi-page PDF: interesting_rxns_all_panels.pdf")

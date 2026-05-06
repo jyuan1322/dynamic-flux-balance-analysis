@@ -97,7 +97,9 @@ class dFBA:
             # Optionally perform FVA
             if self.fva:
                 from cobra.flux_analysis import flux_variability_analysis
-                fva_result = flux_variability_analysis(self.model, reaction_list=self.tracked_reactions)
+                # fva_result = flux_variability_analysis(self.model, reaction_list=self.tracked_reactions)
+                fva_result = flux_variability_analysis(self.model, reaction_list = self.tracked_reactions, 
+                                                       fraction_of_optimum=0.999, loopless=False)
                 for rxn_id in self.tracked_reactions:
                     self.fva_bounds[rxn_id]["min"].append(fva_result.loc[rxn_id, "minimum"])
                     self.fva_bounds[rxn_id]["max"].append(fva_result.loc[rxn_id, "maximum"])

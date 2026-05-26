@@ -1,13 +1,13 @@
 import os
 import pandas as pd
 
-input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Jan302026_UGA_HRMAS_13C_Cells/trajectories/logistic_params_conc"
+input_dir = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/May222026_UGA_HRMAS_13C_Cells/trajectories/logistic_params_conc"
 
 # Read the CSV
-df = pd.read_csv(os.path.join(input_dir, "logistic_params_samples_raw_1H_standard_NT_Isovalerate.csv"))
+# df = pd.read_csv(os.path.join(input_dir, "logistic_params_samples_raw_1H_standard_NT_Isovalerate.csv"))
 
 # Swap columns A and B
-df[["A", "B"]] = df[["B", "A"]]
+# df[["A", "B"]] = df[["B", "A"]]
 
 # Write to a new CSV
 # df.to_csv(os.path.join(input_dir, "logistic_params_samples_raw_1H_standard_pseudo_NT_Isobutyrate.csv"), index=False)

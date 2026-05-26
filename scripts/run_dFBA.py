@@ -28,7 +28,8 @@ config.optionxform = str   # <-- turn off lowercasing
 # config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells.ini")
 # 1H mixture (fid 25)
 # config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells_1H_mixture.ini")
-config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells_1H_standard2.ini")
+# config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells_1H_standard2.ini")
+config.read("config_dfba_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
 
 output_dir = config["dfba_params"]["output_dir"]
 os.makedirs(output_dir, exist_ok=True)
@@ -229,7 +230,7 @@ def plot_logistic_fit(logistic_df, corrected_times, scaled_concs, target_col):
     plt.tight_layout()
     plt.show()
 
-
+'''
 def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign: bool = True, buffer_val: float = None):
     """
     Returns a function `evaluate(t)` that evaluates all curves
@@ -262,6 +263,49 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
         mean = values.mean()
         lower = np.percentile(values, (1 - ci) / 2 * 100)
         upper = np.percentile(values, (1 + ci) / 2 * 100)
+        if buffer_val is not None:
+            lower -= buffer_val
+            upper += buffer_val
+        return lower, upper
+
+    return evaluate
+'''
+def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign: bool = True,
+                           buffer_val: float = None, bound_scale: float = 1.0):
+    df = df_params.copy()
+
+    required = ["A", "B", "C", "D"]
+    for col in required:
+        if col not in df.columns:
+            raise ValueError(f"Column {col} missing from DataFrame")
+
+    def evaluate(t: float):
+        values = df.apply(
+            lambda row: (row["B"] - row["A"]) / row["D"] *
+                        expit((t - row["C"]) / row["D"]) *
+                        (1 - expit((t - row["C"]) / row["D"])),
+            axis=1
+        )
+        print(f"[DEBUG pre-flip] t={t:.2f} sample values: {values.values[:3]}")
+        if flip_sign:
+            values = -1 * values # sign flip for intake into microbes
+            print(f"[DEBUG post-flip] t={t:.2f} sample values: {values.values[:3]}")
+
+        # Compute mean and confidence intervals
+        mean = values.mean()
+        lower = np.percentile(values, (1 - ci) / 2 * 100)
+        upper = np.percentile(values, (1 + ci) / 2 * 100)
+
+        # widen bounds around mean without crossing zero
+        lower = mean - (mean - lower) * bound_scale
+        upper = mean + (upper - mean) * bound_scale
+        
+        # clamp to not cross zero
+        if mean >= 0:
+            lower = max(lower, 0)
+        else:
+            upper = min(upper, 0)
+
         if buffer_val is not None:
             lower -= buffer_val
             upper += buffer_val
@@ -731,18 +775,67 @@ model.objective = objective
 # for rxn in model.reactions:
 #     if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
 #         rxn.upper_bound *= 0.03
+#         # rxn.upper_bound = 0.03
 #     if rxn.id in ['Ex_valL', 'Ex_ileL']:
 #         rxn.upper_bound = 0
-# model.reactions.Ex_glc.upper_bound = 0
+#         # rxn.lower_bound = 0
+# model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
+# # model.reactions.Ex_glc.lower_bound = 0 
 # model.reactions.Ex_cysL.upper_bound = 1000
-# model.solver = 'glpk'
+# # model.solver = 'glpk'
+
+# nonzero upper bound reactions
+#   Ex_tyrL (Exchange L-tyrosine): bounds=(0.0, 0.0)
+#   Ex_pheL (Exchange L-phenylalanine): bounds=(0.0, 0.0)
+#   Ex_serL (Exchange L-serine): bounds=(0.0, 0.0)
+#   Ex_cysL (Exchange L-cysteine): bounds=(0.0, 4.13)
+#   Ex_glc (Exchange beta-D-glucose): bounds=(0.0, 2.5)
+#   Ex_argL (Exchange L-arginine): bounds=(0.0, 1.12)
+#   Ex_metL (Exchange L-methionine): bounds=(0.0, 1.3)
+#   Ex_proL (Exchange L-proline): bounds=(0.0, 5.22)
+#   Ex_aspL (Exchange L-aspartate): bounds=(0.0, 0.0)
+#   Ex_valL (Exchange L-valine): bounds=(0.0, 2.56)
+#   Ex_gly (Exchange glycine): bounds=(0.0, 1.33)
+#   Ex_leuL (Exchange L-leucine): bounds=(0.0, 3.05)
+#   Ex_ileL (Exchange L-isoleucine): bounds=(0.0, 2.29)
+#   Ex_gluL (Exchange L-glutamate): bounds=(0.0, 0.0)
+#   Ex_glnL (Exchange L-glutamine): bounds=(0.0, 0.0)
+#   Ex_asnL (Exchange L-asparagine): bounds=(0.0, 0.0)
+#   Ex_thrL (Exchange L-threonine): bounds=(0.0, 1.68)
+#   Ex_trpL (Exchange L-tryptophan): bounds=(0.0, 0.4)
+#   Ex_alaL (Exchange L-alanine): bounds=(0.0, 0.0)
+#   Ex_his (Exchange L-histidine): bounds=(0.0, 0.65)
+#   Ex_lysL (Exchange L-lysine): bounds=(0.0, 0.0)
+# valine causes infeasible solution
+# leucine causes infeasible solution
+# glycine
+# histidine causes an FVA crash
+amino_rxns = ["Ex_cysL", "Ex_glc", "Ex_argL", "Ex_metL"
+              "Ex_proL", "Ex_ileL", "Ex_thrL", "Ex_trpL"]
+
+for rxn in model.reactions:
+    if (rxn.id in amino_rxns): # bounds=(0.0, 4.13)
+        rxn.upper_bound *= 0.03
+
+model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
+model.reactions.Ex_cysL.upper_bound = 1000
+
+# ── PRINT AIDAN'S BOUNDS ─────────────────────────────────────────────────────
+print("Bounds after Aidan's block:")
+for rxn in model.reactions:
+    if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) \
+            or rxn.id in ['Ex_gly', 'Ex_his', 'Ex_glc', 'Ex_cysL']:
+        print(f"  {rxn.id} ({rxn.name}): bounds=({rxn.lower_bound}, {rxn.upper_bound})")
+# exit()
+# ─────────────────────────────────────────────────────────────────────────────
 
 constraints = {}
 dfba_consts = {k:v for k, v in config["dfba_constraints"].items()}
 for constraint, const_file in dfba_consts.items():
     lg_df = pd.read_csv(os.path.join(config["dfba_params"]["logistic_param_dir"], const_file))
     flip_sign = constraint.startswith("Ex_")  # flip sign for uptake constraints
-    flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=flip_sign)
+    flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=flip_sign, bound_scale=1.0)
+    # flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
     constraints[constraint] = MetaboliteConstraint(constraint, flux_fn)
 """
 constraints = {
@@ -772,11 +865,41 @@ tracked_reactions = [
     if x.strip()
 ]
 
+# ── CHECK BOUNDS AT t=10 ─────────────────────────────────────────────────────
+for rxn_id in ["Ex_glc", "Ex_proL", "Sec_ac"]:
+    if rxn_id in constraints:
+        lb, ub = constraints[rxn_id].get_bounds(10)
+        print(f"{rxn_id} at t=10: get_bounds → ({lb:.6f}, {ub:.6f})")
+# exit()
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+
 """
 with open("ATP_sink_reactions_list.txt", "r") as f:
     tracked_reactions = [line.strip() for line in f]
 print(tracked_reactions)
 """
+
+# # Test each constraint in isolation
+# # ── DIAGNOSTIC ──────────────────────────────────────────────────────────────
+# for rxn_id in constraints:
+#     with model:
+#         constraint = constraints[rxn_id]
+#         lb, ub = constraint.get_bounds(0)
+#         lb, ub = min(lb, ub), max(lb, ub)
+#         rxn = model.reactions.get_by_id(rxn_id)
+#         print(f"Trying {rxn_id}: flux_fn→({lb:.6f},{ub:.6f}), model bounds=({rxn.lower_bound},{rxn.upper_bound})")
+#         if ub < rxn.lower_bound:
+#             rxn.lower_bound = lb
+#             rxn.upper_bound = ub
+#         else:
+#             rxn.upper_bound = ub
+#             rxn.lower_bound = lb
+#         sol = model.optimize()
+#         print(f"  → {sol.status}")
+# # ────────────────────────────────────────────────────────────────────────────
+
 
 # 3. Run dFBA
 # ID_135: proL_c --> proD_c (proline racemase)
@@ -786,7 +909,7 @@ sim = dFBA(
     model=model,
     objective=objective,
     constraints=constraints,
-    fba_method=lambda m: m.optimize(),
+    # fba_method=lambda m: m.optimize(), # use pfba instead
     time_range=tuple(map(float, time_range.split(","))),
     steps_per_hour=int(config["dfba_params"]["steps_per_hour"]), # 5
     # tracked_reactions=["ATP_sink", "ID_314", "ID_135"],
@@ -802,20 +925,41 @@ sim = dFBA(
     fva=True
 )
 
-sim.run()
+
+# # Check feasibility with the default objective before running dFBA
+# with model:
+#     sol = model.optimize()
+#     print("Status:", sol.status)
+#     print("Objective value:", sol.objective_value)
+#     
+#     # Print exchange reaction bounds that might be problematic
+#     for rxn in model.reactions:
+#         if rxn.id.startswith('Ex_') or rxn.id.startswith('Sec_'):
+#             if rxn.lower_bound == 0 and rxn.upper_bound == 0:
+#                 print(f"BLOCKED: {rxn.id}")
+#             elif rxn.upper_bound < 0.1 and rxn.upper_bound >= 0:
+#                 print(f"Near-zero UB: {rxn.id} bounds=({rxn.lower_bound}, {rxn.upper_bound})")
+
+
+
+try:
+    sim.run()
+except Exception as e:
+    print(f"Simulation stopped early: {e}")
+
 sim.export_results(prefix=os.path.join(config["dfba_params"]["output_dir"], f"dfba_{exp_name}"))
 
 # plot resulting fluxes
 df = sim.solution_fluxes
 
+completed_times = sim.timecourse[:len(list(sim.fva_bounds.values())[0]["min"])]
 fva_data = {}
 for rxn in sim.tracked_reactions:
     fva_data[f"{rxn}_min"] = sim.fva_bounds[rxn]["min"]
     fva_data[f"{rxn}_max"] = sim.fva_bounds[rxn]["max"]
 
-fva_df = pd.DataFrame(fva_data, index=sim.timecourse)
-
-df = df.join(fva_df)
+fva_df = pd.DataFrame(fva_data, index=completed_times)
+df = sim.solution_fluxes.dropna(how='all').join(fva_df)
 
     # reactions = ["ID_314", "ID_314_min", "ID_314_max"]
     # reactions = ["ATP_sink", "Trans_glc", "Ex_proL", "Ex_leuL", 

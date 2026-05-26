@@ -2,6 +2,8 @@ import cobra
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Callable, Optional
+# fva
+from cobra.flux_analysis import flux_variability_analysis
 
 
 class MetaboliteConstraint:
@@ -59,12 +61,22 @@ class dFBA:
             # print(f"[t={t:.2f}] Applying constraint for {met_id}")
             lb, ub = constraint.get_bounds(t)
 
+            # guard against floating point precision issues
+            # lb, ub = min(lb, ub), max(lb, ub)
+            # if abs(ub - lb) < 1e-10:
+            #     ub = lb
+
             # print(f"[DEBUG] At time {t:.2f}, constraint returned: lb={lb}, ub={ub}")
 
             # exch_rxn_id = f"Ex_{met_id}"  # Assumes BiGG-style naming
             exch_rxn_id = f"{met_id}"  # Assumes BiGG-style naming
             if exch_rxn_id in self.model.reactions:
                 rxn = self.model.reactions.get_by_id(exch_rxn_id)
+
+                # temporary debug for Ex_glc
+                if exch_rxn_id == "Ex_glc":
+                    print(f"[DEBUG Ex_glc] t={t:.2f} get_bounds=({lb:.6f},{ub:.6f}) model=({rxn.lower_bound:.6f},{rxn.upper_bound:.6f})")
+
 
                 # Update upper bound before lower bound to avoid conflict
                 if ub < rxn.lower_bound:
@@ -88,6 +100,34 @@ class dFBA:
             self.apply_constraints(t)
             sol = self.fba_method(self.model)
 
+            # # Check feasibility before FVA
+            # if sol.status != "optimal":
+            #     print(f"[t={t:.2f}] Infeasible! Testing combinations...")
+            #     
+            #     # Test 1: zero ALL Sec_ lower bounds together
+            #     with self.model:
+            #         for skip_rxn in self.constraints:
+            #             if skip_rxn.startswith("Sec_"):
+            #                 self.model.reactions.get_by_id(skip_rxn).lower_bound = 0
+            #         test_sol = self.fba_method(self.model)
+            #         print(f"  Zeroing ALL Sec_ lbs → {test_sol.status}")
+
+            #     # Test 2: zero all Ex_ lower bounds together
+            #     with self.model:
+            #         for skip_rxn in self.constraints:
+            #             if skip_rxn.startswith("Ex_"):
+            #                 self.model.reactions.get_by_id(skip_rxn).lower_bound = 0
+            #         test_sol = self.fba_method(self.model)
+            #         print(f"  Zeroing ALL Ex_ lbs → {test_sol.status}")
+
+            #     # Test 3: zero everything
+            #     with self.model:
+            #         for skip_rxn in self.constraints:
+            #             self.model.reactions.get_by_id(skip_rxn).lower_bound = 0
+            #         test_sol = self.fba_method(self.model)
+            #         print(f"  Zeroing ALL lbs → {test_sol.status}")
+            #     break
+
             # Save tracked reaction fluxes
             for rxn_id in self.tracked_reactions:
                 self.solution_fluxes.at[t, rxn_id] = sol.fluxes.get(rxn_id, np.nan)
@@ -96,7 +136,20 @@ class dFBA:
 
             # Optionally perform FVA
             if self.fva:
-                from cobra.flux_analysis import flux_variability_analysis
+                # sanitize all reaction bounds before FVA
+                # for rxn in self.model.reactions:
+                #     if rxn.lower_bound > rxn.upper_bound:
+                #         rxn.lower_bound, rxn.upper_bound = rxn.upper_bound, rxn.lower_bound
+                #     if abs(rxn.upper_bound - rxn.lower_bound) < 1e-10:
+                #         rxn.upper_bound = rxn.lower_bound
+                # Check model feasibility before FVA
+                # test = self.model.slim_optimize()
+                # if test is None or np.isnan(test):
+                #     print(f"[t={t:.2f}] Model infeasible before FVA, skipping.")
+                #     for rxn_id in self.tracked_reactions:
+                #         self.fva_bounds[rxn_id]["min"].append(np.nan)
+                #         self.fva_bounds[rxn_id]["max"].append(np.nan)
+                #     continue
                 # fva_result = flux_variability_analysis(self.model, reaction_list=self.tracked_reactions)
                 fva_result = flux_variability_analysis(self.model, reaction_list = self.tracked_reactions, 
                                                        fraction_of_optimum=0.999, loopless=False)
@@ -106,17 +159,29 @@ class dFBA:
 
         print("dFBA simulation complete.")
 
+    # def export_results(self, prefix="dfba_output"):
+    #     """
+    #     Writes results to disk.
+    #     """
+    #     self.solution_fluxes.to_csv(f"{prefix}_fluxes.csv")
+    #     if self.fva:
+    #         # Save FVA min/max as DataFrames
+    #         pd.DataFrame({
+    #             rxn: self.fva_bounds[rxn]["min"] for rxn in self.tracked_reactions
+    #         }, index=self.timecourse).to_csv(f"{prefix}_fva_min.csv")
+    #         pd.DataFrame({
+    #             rxn: self.fva_bounds[rxn]["max"] for rxn in self.tracked_reactions
+    #         }, index=self.timecourse).to_csv(f"{prefix}_fva_max.csv")
+
+    # Updated export_results to drop NaN rows (e.g., from infeasible time points) and ensure FVA indices match completed time points.
     def export_results(self, prefix="dfba_output"):
-        """
-        Writes results to disk.
-        """
-        self.solution_fluxes.to_csv(f"{prefix}_fluxes.csv")
+        self.solution_fluxes.dropna(how='all').to_csv(f"{prefix}_fluxes.csv")
         if self.fva:
-            # Save FVA min/max as DataFrames
+            completed_times = self.timecourse[:len(list(self.fva_bounds.values())[0]["min"])]
             pd.DataFrame({
                 rxn: self.fva_bounds[rxn]["min"] for rxn in self.tracked_reactions
-            }, index=self.timecourse).to_csv(f"{prefix}_fva_min.csv")
+            }, index=completed_times).to_csv(f"{prefix}_fva_min.csv")
             pd.DataFrame({
                 rxn: self.fva_bounds[rxn]["max"] for rxn in self.tracked_reactions
-            }, index=self.timecourse).to_csv(f"{prefix}_fva_max.csv")
+            }, index=completed_times).to_csv(f"{prefix}_fva_max.csv")
 

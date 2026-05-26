@@ -17,9 +17,12 @@ config.optionxform = str   # <-- turn off lowercasing
 # config.read("config_feb052026_UGA_HRMAS_13C_Cells.ini")
 # 1H standards (fid 21)
 # config.read("config_feb052026_UGA_HRMAS_13C_Cells_1H_standard.ini")
-config.read("config_jan302026_UGA_HRMAS_13C_Cells_1H_standard2.ini")
+# config.read("config_jan302026_UGA_HRMAS_13C_Cells_1H_standard2.ini")
 # 1H mixture (fid 25)
 # config.read("config_feb052026_UGA_HRMAS_13C_Cells_1H_mixture.ini")
+# May 22 experiment 1
+config.read("config_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+# config.read("config_may222026_UGA_HRMAS_13C_Cells.ini")
 
 # Close any existing plots
 plt.close('all')

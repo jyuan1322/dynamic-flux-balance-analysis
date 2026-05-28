@@ -32,8 +32,11 @@ config.optionxform = str   # <-- turn off lowercasing
 # 1H mixture (fid 25)
 # config.read("config_feb052026_UGA_HRMAS_13C_Cells_1H_mixture.ini")
 # May 22, 2026 exp 4
-config.read("config_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+# config.read("config_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
 # config.read("config_may222026_UGA_HRMAS_13C_Cells.ini")
+# Jan-Feb 2026 annotated concentrations
+config.read("config_janfeb_reference_13C_1H.ini")
+
 
 input_dir = config['trajectories']['input_dir']
 output_dir = config['trajectories']['output_dir']
@@ -41,113 +44,76 @@ os.makedirs(output_dir, exist_ok=True)
 exp_name = config['trajectories']['exp_name']
 
 # ----------------------------
+# <<< NEW: check for preprocessed concentrations flag
+preprocessed_concs = config['trajectories'].getboolean('preprocessed_concs', fallback=False)
 
-# metabolite trajectories over time are now stored in a single json file,
-# not one json per fid
-# records = []
+if preprocessed_concs:
+    # Read directly from a pre-processed CSV with Time + metabolite columns
+    input_stack = config['trajectories']['input_stack']
+    df_grouped = pd.read_csv(os.path.join(input_dir, input_stack))
+    # Ensure the time column is named "Time"
+    if 'Time' not in df_grouped.columns:
+        raise ValueError("Preprocessed CSV must have a 'Time' column")
+    print(f"Loaded preprocessed concentrations from {input_stack}")
+    print(df_grouped.head())
+else:
 
-# for fname in os.listdir(input_dir):
-#     if fname.endswith(".json"):
-#         with open(os.path.join(input_dir, fname)) as f:
-#             data = json.load(f)
-#             if isinstance(data, dict):
-#                 records.append(data)
-#             else:
-#                 raise ValueError(f"{fname} is not a flat dict JSON")
+    # Process from json
 
-records = []
+    records = []
 
-for fname in os.listdir(input_dir):
-    if not fname.endswith(".json"):
-        continue
+    for fname in os.listdir(input_dir):
+        if not fname.endswith(".json"):
+            continue
 
-    with open(os.path.join(input_dir, fname)) as f:
-        data = json.load(f)
+        with open(os.path.join(input_dir, fname)) as f:
+            data = json.load(f)
 
-    metabolite = data["metabolite"]
-    exp = data["experiment_name"]
+        metabolite = data["metabolite"]
+        exp = data["experiment_name"]
 
-    print("Processing file:", fname)
+        print("Processing file:", fname)
 
-    if exp != exp_name:
-        print(f"Skipping {fname} with experiment name {exp} (looking for {exp_name})")
-        continue
+        if exp != exp_name:
+            print(f"Skipping {fname} with experiment name {exp} (looking for {exp_name})")
+            continue
 
-    areas = data["fit_results"]["areas"]
-    n_traces = data["fit_results"]["n_traces_total"]
+        areas = data["fit_results"]["areas"]
+        n_traces = data["fit_results"]["n_traces_total"]
 
-    if len(areas) != n_traces:
-        raise ValueError(
-            f"{fname}: areas length {len(areas)} != n_traces {n_traces}"
-        )
+        if len(areas) != n_traces:
+            raise ValueError(
+                f"{fname}: areas length {len(areas)} != n_traces {n_traces}"
+            )
 
-    for trace_idx, area in enumerate(areas):
-        records.append({
-            "experiment_name": exp,
-            "metabolite": metabolite,
-            "time": trace_idx,      # or trace_idx * dt if you have one
-            "total_area": area
-        })
+        for trace_idx, area in enumerate(areas):
+            records.append({
+                "experiment_name": exp,
+                "metabolite": metabolite,
+                "time": trace_idx,      # or trace_idx * dt if you have one
+                "total_area": area
+            })
 
+    # Convert list of dicts --> DataFrame
+    df = pd.DataFrame(records)
+    df["total_area"] = df["total_area"].clip(lower=0)
+    df = df[df["experiment_name"] == exp_name]
 
-# ----------------------------
+    print(df.head())
+    print(len(df), "rows loaded")
 
-# Convert list of dicts --> DataFrame
-df = pd.DataFrame(records)
-df["total_area"] = df["total_area"].clip(lower=0)
+    if df['time'].isna().any():
+        df['time'] = df['trace_index']
 
-df = df[df["experiment_name"] == exp_name]
-
-print(df.head())
-print(len(df), "rows loaded")
-
-if df['time'].isna().any():
-    df['time'] = df['trace_index']
-
-# Original code uses pivot, which requires unique (metabolite, time) pairs.
-# df_grouped = df.pivot(index="metabolite", columns="time", values="total_area")
-# df_grouped = df_grouped.T
-# df_grouped = df_grouped.reset_index().rename(columns={"time": "Time"})
-
-# This version allows for multiple entries per (metabolite, time) and sums them, then pivots
-df_grouped = (
-    df
-    .groupby(["metabolite", "time"], as_index=False)["total_area"]
-    .sum()
-    .pivot(index="time", columns="metabolite", values="total_area")
-    .reset_index()
-    .rename(columns={"time": "Time"})
-)
-print(df_grouped.columns)
-# plot subsets of metabolite trajectories
-# df_grouped = df_grouped[['Time', '13C_Glucose', '13C_Acetate', '13C_Alanine', '13C_Ethanol', 'NT_Acetate', 'NT_Ethanol']]
-# df_grouped = df_grouped[['Time', '13C_Glucose', 'NT_Isobutyrate', 'NT_Isocaproate', 'NT_Isoleucine', 'NT_Isovalerate', 'NT_Leucine']]
-# df_grouped = df_grouped[['Time', '13C_Glucose', '13C_Formate', 'NT_Formate', '13C_Lactate', 'NT_Pyruvate', '13C_Pyruvate', 'NT_Propionate']]
-# df_grouped = df_grouped[['Time', '13C_Glucose', 'NT_5-aminovalerate', 'NT_Proline']]
-# df_grouped = df_grouped[['Time', '13C_Glucose', 'NT_Arginine', 'NT_Cysteine', 'NT_Glycine', 'NT_Histidine', 'NT_Methionine', 'NT_Threonine', 'NT_Tryptophan']]
-
-# scale_to_mMol = True
-
-# Should be able to delete this now
-# UGA HRMAS 10/31/2025, 11/03/2025
-# if exp_name in ["UGA_HRMAS_1H"]:
-#     df_grouped["13C_Glucose"] = df_grouped["13C_Glucose"] / 0.5
-#     df_grouped["13C_Acetate"] = df_grouped["13C_Acetate"] / 1.5
-#     df_grouped["13C_Butyrate"] = df_grouped["13C_Butyrate"] / 1.5
-#     df_grouped["13C_Alanine"] = df_grouped["13C_Alanine"] / 1.5
-#     df_grouped["13C_Ethanol"] = df_grouped["13C_Ethanol"] / 1.5
-#     # correct for increase in number of scans
-#     # 10/31/2025
-#     # cols_to_half = ['13C_Glucose', '13C_Acetate', '13C_Butyrate']
-#     # df_grouped.loc[df_grouped['Time'] >= 206, cols_to_half] = df_grouped.loc[df_grouped['Time'] >= 206, cols_to_half] / 2
-#     # 11/03/2025
-#     df_grouped = df_grouped[df_grouped['Time'] <= 223]
-#     cols_to_half = ['13C_Glucose', '13C_Acetate', '13C_Butyrate', '13C_Alanine', '13C_Ethanol']
-#     df_grouped.loc[df_grouped['Time'] >= 131, cols_to_half] = df_grouped.loc[df_grouped['Time'] >= 131, cols_to_half] / 2
-#     # remove the first and last time point (not aligned)
-#     tmin = df_grouped["Time"].min()
-#     tmax = df_grouped["Time"].max()
-#     df_grouped = df_grouped[(df_grouped["Time"] != tmin) & (df_grouped["Time"] != tmax)]
+    df_grouped = (
+        df
+        .groupby(["metabolite", "time"], as_index=False)["total_area"]
+        .sum()
+        .pivot(index="time", columns="metabolite", values="total_area")
+        .reset_index()
+        .rename(columns={"time": "Time"})
+    )
+    print(df_grouped.columns)
 
 # --------------------
 # If you need to rename a metabolite
@@ -155,26 +121,17 @@ print(df_grouped.columns)
 # df_grouped["13C_Alanine"] = df_grouped["13C_Alanine2"] / 1.0
 # df_grouped = df_grouped.drop(columns=["13C_Alanine2"])
 
-# rescale according to proton number
-proton_num = {k: float(v) for k, v in config["proton_num"].items()}
-for metabolite, protons in proton_num.items():
-    if metabolite in df_grouped.columns:
-        df_grouped[metabolite] = df_grouped[metabolite] / protons
+if not preprocessed_concs:
+    # rescale according to proton number
+    proton_num = {k: float(v) for k, v in config["proton_num"].items()}
+    for metabolite, protons in proton_num.items():
+        if metabolite in df_grouped.columns:
+            df_grouped[metabolite] = df_grouped[metabolite] / protons
 
-# plot raw areas
-# plt.figure(figsize=(8,5))
-# for col in df_grouped.columns[1:]:
-#     plt.plot(df_grouped["Time"], df_grouped[col], label=col)
-# 
-# plt.xlabel("Time")
-# plt.ylabel("Concentration (mMol)")
-# plt.legend()
-# plt.tight_layout()
-# plt.show()
-
-# write concentrations scaled by proton number
-os.makedirs(os.path.join(output_dir, "logistic_params"), exist_ok=True)
-df_grouped.to_csv(os.path.join(output_dir, "logistic_params", f"{exp_name}_scaled_areas_10202025.csv"), index=False)
+    # write concentrations scaled by proton number
+    os.makedirs(os.path.join(output_dir, "logistic_params"), exist_ok=True)
+    df_grouped.to_csv(os.path.join(output_dir, "logistic_params",
+                                   f"{exp_name}_scaled_areas_10202025.csv"), index=False)
 
 
 
@@ -343,7 +300,8 @@ def plot_logistic_fit(logistic_df, corrected_times, scaled_concs, target_col):
 # --------------------------------------
 # plot logistic fits for all metabolites
 # --------------------------------------
-for col in df_grouped.columns[1:]:
+metabolites = [col for col in df_grouped.columns if col not in ("Time", "Samplecode")]
+for col in metabolites:
     logistic_df, corrected_times, scaled_concs = logistic_inference(df_grouped,
                                                                 target_col=col,
                                                                 exp_id=exp_name)
@@ -354,8 +312,10 @@ for col in df_grouped.columns[1:]:
 def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_col, color):
     # Posterior samples
     y_preds = []
+    # for i in range(logistic_df.shape[0]):
+    #     A, B, C, D = logistic_df.loc[i, ["A", "B", "C", "D"]]
     for i in range(logistic_df.shape[0]):
-        A, B, C, D = logistic_df.loc[i, ["A", "B", "C", "D"]]
+        A, B, C, D = logistic_df.iloc[i][["A", "B", "C", "D"]]  # <<< .iloc not .loc
         y_fit = A + (B - A) * (1 / (1 + np.exp(-(corrected_times - C) / D)))
         y_preds.append(y_fit)
         # ax2.plot(corrected_times, y_fit, color=color, alpha=0.01)
@@ -372,13 +332,17 @@ def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_c
 
     # Original data
     ax1.scatter(corrected_times, scaled_concs, color=color, s=16, label='_nolegend_')
-    logistic_pred_lists = [corrected_times, y_mean, lower, upper]
+    # logistic_pred_lists = [corrected_times, y_mean, lower, upper]
+    # logistic_pred_cols = [f"{target_col}_times", f"{target_col}_mean", f"{target_col}_lower", f"{target_col}_upper"]
+    # logistic_pred_df = pd.DataFrame(dict(zip(logistic_pred_cols, logistic_pred_lists)))
+    logistic_pred_lists = [corrected_times.values, y_mean, lower, upper]  # <<< .values
     logistic_pred_cols = [f"{target_col}_times", f"{target_col}_mean", f"{target_col}_lower", f"{target_col}_upper"]
     logistic_pred_df = pd.DataFrame(dict(zip(logistic_pred_cols, logistic_pred_lists)))
     return logistic_pred_df
 
 # metabolites = ["Formate", "Isobutyrate", "Isoleucine", "Valine"]
-metabolites = df_grouped.columns[1:].to_list()
+# metabolites = df_grouped.columns[1:].to_list()
+metabolites = [col for col in df_grouped.columns if col not in ("Time", "Samplecode")]
 # colors = cm.get_cmap("tab10", len(metabolites))
 colors = cm.get_cmap("tab20", len(metabolites))
 
@@ -449,78 +413,91 @@ output_trajct_fname = f"logistic_fits_raw_areas_{exp_name}.pdf"
 # plt.savefig(os.path.join(output_dir, output_trajct_fname))
 plt.show()
 
-df_grouped_conc = df_grouped.copy()
+# <<< MODIFIED: skip mMol scaling if concentrations are already preprocessed
+if preprocessed_concs:
+    # Concentrations are already in the correct units — use df_grouped directly
+    df_grouped_conc = df_grouped.copy()
+    logistic_df_dict_conc = {k: v.copy() for k, v in logistic_df_dict.items()}
+    all_logistic_preds_concs = all_logistic_preds.copy()
+    # Still write the logistic params (already in concentration units)
+    os.makedirs(os.path.join(output_dir, "logistic_params_conc"), exist_ok=True)
+    for metab in logistic_df_dict_conc:
+        logistic_df_dict_conc[metab].to_csv(os.path.join(output_dir, "logistic_params_conc",
+                f"logistic_params_samples_{exp_name}_{metab.replace(' ', '_')}.csv"),
+                index=False)
+else:
+    df_grouped_conc = df_grouped.copy()
 
-# adjust logistic params A and B to match concentrations
-# logistic_df_dict_conc = logistic_df_dict.copy()
-logistic_df_dict_conc = { # deep copy
-    k: v.copy()
-    for k, v in logistic_df_dict.items()
-}
+    # adjust logistic params A and B to match concentrations
+    # logistic_df_dict_conc = logistic_df_dict.copy()
+    logistic_df_dict_conc = { # deep copy
+        k: v.copy()
+        for k, v in logistic_df_dict.items()
+    }
 
-# mean and bounds for plotting
-all_logistic_preds_concs = all_logistic_preds.copy()
+    # mean and bounds for plotting
+    all_logistic_preds_concs = all_logistic_preds.copy()
 
-# set the initial value to the known initial concentration
-for metab, initial_conc in config["scale_mMol_to_initial"].items():
-    initial_conc = float(initial_conc)
-    if metab in df_grouped_conc.columns:
-        initial_area = df_grouped_conc[metab].iloc[0]
-        metab_const = initial_conc / initial_area
-        df_grouped_conc[metab] = metab_const * df_grouped[metab]
-        # adjust logistic params
-        logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
-        logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
-        # for plotting
-        all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
-        all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
-        all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
+    # set the initial value to the known initial concentration
+    for metab, initial_conc in config["scale_mMol_to_initial"].items():
+        initial_conc = float(initial_conc)
+        if metab in df_grouped_conc.columns:
+            initial_area = df_grouped_conc[metab].iloc[0]
+            metab_const = initial_conc / initial_area
+            df_grouped_conc[metab] = metab_const * df_grouped[metab]
+            # adjust logistic params
+            logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
+            logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+            # for plotting
+            all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
+            all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
+            all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
 
-# set the upper asymptote value (either initial or final) to the known
-# initial concentration
-for metab, initial_conc in config["scale_mMol_to_asymptote"].items():
-    initial_conc = float(initial_conc)
-    if metab in df_grouped_conc.columns:
-        upper_asymp_value = logistic_params.loc[metab, "B"]
-        metab_const = initial_conc / upper_asymp_value
-        df_grouped_conc[metab] = metab_const * df_grouped[metab]
-        # adjust logistic params
-        logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
-        logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
-        # for plotting
-        all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
-        all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
-        all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
+    # set the upper asymptote value (either initial or final) to the known
+    # initial concentration
+    for metab, initial_conc in config["scale_mMol_to_asymptote"].items():
+        initial_conc = float(initial_conc)
+        if metab in df_grouped_conc.columns:
+            upper_asymp_value = logistic_params.loc[metab, "B"]
+            metab_const = initial_conc / upper_asymp_value
+            df_grouped_conc[metab] = metab_const * df_grouped[metab]
+            # adjust logistic params
+            logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
+            logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+            # for plotting
+            all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
+            all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
+            all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
 
-# scale glucose products using ratio method
-glucose_initial_conc = df_grouped_conc["13C_Glucose"].iloc[0] # in mMol, however it was obtained
-glucose_upper_asymp = logistic_params.loc["13C_Glucose", "B"]
-for metab, ratio_slope in config["scale_mMol_to_ratio"].items():
-    ratio_slope = float(ratio_slope)
-    if metab in df_grouped_conc.columns:
-        # upper_asymp_value = logistic_params.loc[metab, "B"]
-        metab_const = ratio_slope * glucose_initial_conc / glucose_upper_asymp
-        df_grouped_conc[metab] = metab_const * df_grouped[metab]
-        # adjust logstic params
-        logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
-        logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
-        # for plotting
-        all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
-        all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
-        all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
+    # scale glucose products using ratio method
+    glucose_initial_conc = df_grouped_conc["13C_Glucose"].iloc[0] # in mMol, however it was obtained
+    glucose_upper_asymp = logistic_params.loc["13C_Glucose", "B"]
+    for metab, ratio_slope in config["scale_mMol_to_ratio"].items():
+        ratio_slope = float(ratio_slope)
+        if metab in df_grouped_conc.columns:
+            # upper_asymp_value = logistic_params.loc[metab, "B"]
+            metab_const = ratio_slope * glucose_initial_conc / glucose_upper_asymp
+            df_grouped_conc[metab] = metab_const * df_grouped[metab]
+            # adjust logstic params
+            logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
+            logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+            # for plotting
+            all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
+            all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
+            all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
 
-# write logistic params for metabolites after scaling to mMol
-os.makedirs(os.path.join(output_dir, "logistic_params_conc"), exist_ok=True)
-for metab in logistic_df_dict_conc:
-    logistic_df_dict_conc[metab].to_csv(os.path.join(output_dir, "logistic_params_conc",
-            f"logistic_params_samples_{exp_name}_{metab.replace(' ', '_')}.csv"),
-            index=False)
+    # write logistic params for metabolites after scaling to mMol
+    os.makedirs(os.path.join(output_dir, "logistic_params_conc"), exist_ok=True)
+    for metab in logistic_df_dict_conc:
+        logistic_df_dict_conc[metab].to_csv(os.path.join(output_dir, "logistic_params_conc",
+                f"logistic_params_samples_{exp_name}_{metab.replace(' ', '_')}.csv"),
+                index=False)
 
 
 # single plot for all samples - concentrations
-fig, ax1 = plt.subplots(1, 1, figsize=(10, 8), sharex=True)
+fig, ax1 = plt.subplots(1, 1, figsize=(5, 4), sharex=True)
 
-metabolites = [x for x in df_grouped_conc.columns if x != "Time"]
+metabolites = [x for x in df_grouped_conc.columns if x not in ("Time", "Samplecode")]
 for i, target_col in enumerate(metabolites):
     print('-'*40)
     print(target_col)

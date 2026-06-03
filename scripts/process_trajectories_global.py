@@ -13,6 +13,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.special import expit
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+from matplotlib.backends.backend_pdf import PdfPages
 from networkx.algorithms.traversal.depth_first_search import dfs_tree
 from networkx.drawing.nx_agraph import graphviz_layout
 from cycler import cycler
@@ -35,8 +36,26 @@ config.optionxform = str   # <-- turn off lowercasing
 # config.read("config_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
 # config.read("config_may222026_UGA_HRMAS_13C_Cells.ini")
 # Jan-Feb 2026 annotated concentrations
-config.read("config_janfeb_reference_13C_1H.ini")
+# config.read("config_janfeb_reference_13C_1H.ini")
+# May 26, 2026 exp 5
+# config.read("config_may262026_UGA_HRMAS_13C_Cells.ini")
+config.read("config_may262026_UGA_HRMAS_13C_Cells_1H_standard.ini")
 
+# METABOLITE_GROUPS = {
+#     "Set 1": ["13C_Glucose", "13C_Acetate", "13C_Ethanol"],
+#     "Set 2": ["13C_CO2", "13C_Lactate", "13C_Alanine"],
+#     # "Set 3": ["13C_Glucose", "13C_Ethanol", "13C_Butyrate"],
+# }
+METABOLITE_GROUPS = {
+    "Set 1": ["NT_Butyrate", "NT_Isobutyrate", "13C_Acetate", "NT_Acetate"],
+    "Set 2": ["NT_Proline", "NT_5-aminovalerate", "DSS"],
+    "Set 3": ["NT_Leucine", "NT_Isoleucine", "NT_Isovalerate"],
+    "Set 4": ["13C_Lactate", "13C_Pyruvate", "NT_Pyruvate"],
+    "Set 5": ["NT_Isocaproate", "13C_Formate", "NT_Formate"],
+    "Set 6": ["13C_Glucose", "Glucose", "13C_Alanine", "13C_Ethanol"],
+    "Set 7": ["NT_Arginine", "NT_Histidine", "NT_Methionine" ],
+    "Set 8": ["NT_Threonine", "NT_Tryptophan", "NT_Valine"],
+}
 
 input_dir = config['trajectories']['input_dir']
 output_dir = config['trajectories']['output_dir']
@@ -78,8 +97,12 @@ else:
             print(f"Skipping {fname} with experiment name {exp} (looking for {exp_name})")
             continue
 
-        areas = data["fit_results"]["areas"]
-        n_traces = data["fit_results"]["n_traces_total"]
+        if "fit_results" in data:
+            areas = data["fit_results"]["areas"]
+            n_traces = data["fit_results"]["n_traces_total"]
+        else:
+            areas = data["areas"]
+            n_traces = data["n_traces_total"]
 
         if len(areas) != n_traces:
             raise ValueError(
@@ -301,11 +324,15 @@ def plot_logistic_fit(logistic_df, corrected_times, scaled_concs, target_col):
 # plot logistic fits for all metabolites
 # --------------------------------------
 metabolites = [col for col in df_grouped.columns if col not in ("Time", "Samplecode")]
+
+plot_individual = config['trajectories'].getboolean('plot_individual_metabs', fallback=True)
+
 for col in metabolites:
     logistic_df, corrected_times, scaled_concs = logistic_inference(df_grouped,
                                                                 target_col=col,
                                                                 exp_id=exp_name)
-    plot_logistic_fit(logistic_df, corrected_times, scaled_concs, target_col=col)
+    if plot_individual:
+        plot_logistic_fit(logistic_df, corrected_times, scaled_concs, target_col=col)
 
 
 # single plot for all samples
@@ -342,7 +369,7 @@ def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_c
 
 # metabolites = ["Formate", "Isobutyrate", "Isoleucine", "Valine"]
 # metabolites = df_grouped.columns[1:].to_list()
-metabolites = [col for col in df_grouped.columns if col not in ("Time", "Samplecode")]
+# metabolites = [col for col in df_grouped.columns if col not in ("Time", "Samplecode")]
 # colors = cm.get_cmap("tab10", len(metabolites))
 colors = cm.get_cmap("tab20", len(metabolites))
 
@@ -413,6 +440,36 @@ output_trajct_fname = f"logistic_fits_raw_areas_{exp_name}.pdf"
 # plt.savefig(os.path.join(output_dir, output_trajct_fname))
 plt.show()
 
+# save plots to multiple pdf pages
+pdf_out = os.path.join(output_dir, f"logistic_fits_raw_areas_{exp_name}.pdf")
+with PdfPages(pdf_out) as pdf:
+    for group_name, group_metabolites in METABOLITE_GROUPS.items():
+        group_metabolites = [m for m in group_metabolites if m in metabolites]
+        if not group_metabolites:
+            continue
+        fig, ax1 = plt.subplots(1, 1, figsize=(10, 8))
+        for target_col in group_metabolites:
+            i = metabolites.index(target_col)
+            line, = ax1.plot(all_logistic_preds[f"{target_col}_times"],
+                     all_logistic_preds[f"{target_col}_mean"],
+                     linewidth=2, label=target_col)
+            color = line.get_color()
+            ax1.fill_between(all_logistic_preds[f"{target_col}_times"],
+                             all_logistic_preds[f"{target_col}_lower"],
+                             all_logistic_preds[f"{target_col}_upper"],
+                             color=color, alpha=0.2, label='_nolegend_')
+            ax1.scatter(df_grouped["Time"], df_grouped[target_col],
+                        color=color, s=16, label='_nolegend_')
+        ax1.set_xlabel('Time (hours)')
+        ax1.set_ylabel('NMR area under peaks (a.u.)')
+        ax1.set_title(group_name)
+        ax1.legend()
+        plt.tight_layout()
+        pdf.savefig()
+        plt.close()
+print(f"Saved: {pdf_out}")
+
+
 # <<< MODIFIED: skip mMol scaling if concentrations are already preprocessed
 if preprocessed_concs:
     # Concentrations are already in the correct units — use df_grouped directly
@@ -470,21 +527,40 @@ else:
             all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
 
     # scale glucose products using ratio method
-    glucose_initial_conc = df_grouped_conc["13C_Glucose"].iloc[0] # in mMol, however it was obtained
-    glucose_upper_asymp = logistic_params.loc["13C_Glucose", "B"]
-    for metab, ratio_slope in config["scale_mMol_to_ratio"].items():
-        ratio_slope = float(ratio_slope)
-        if metab in df_grouped_conc.columns:
-            # upper_asymp_value = logistic_params.loc[metab, "B"]
-            metab_const = ratio_slope * glucose_initial_conc / glucose_upper_asymp
-            df_grouped_conc[metab] = metab_const * df_grouped[metab]
-            # adjust logstic params
-            logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
-            logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
-            # for plotting
-            all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
-            all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
-            all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
+    if "scale_mMol_to_glc_ratio" in config:
+        glucose_initial_conc = df_grouped_conc["13C_Glucose"].iloc[0] # in mMol, however it was obtained
+        glucose_upper_asymp = logistic_params.loc["13C_Glucose", "B"]
+        for metab, ratio_slope in config["scale_mMol_to_glc_ratio"].items():
+            ratio_slope = float(ratio_slope)
+            if metab in df_grouped_conc.columns:
+                # upper_asymp_value = logistic_params.loc[metab, "B"]
+                metab_const = ratio_slope * glucose_initial_conc / glucose_upper_asymp
+                df_grouped_conc[metab] = metab_const * df_grouped[metab]
+                # adjust logstic params
+                logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
+                logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+                # for plotting
+                all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
+                all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
+                all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
+
+    # scale 1H metabolites to DSS with a fixed, known concentration
+    if "scale_mMol_to_dss" in config:
+        dss_known_conc = float(config["scale_mMol_to_dss"]["dss_known_conc"]) # mMol
+        dss_area_mean = df_grouped["DSS"].mean()
+        for metab, ratio_slope in config["scale_mMol_to_dss"].items():
+            ratio_slope = float(ratio_slope)
+            if metab in df_grouped_conc.columns:
+                # per-timepoint scaling for raw data
+                metab_const_ts = ratio_slope * dss_known_conc / df_grouped["DSS"]
+                df_grouped_conc[metab] = metab_const_ts * df_grouped[metab]
+                # mean scaling for logistic curves
+                metab_const = ratio_slope * dss_known_conc / dss_area_mean
+                logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
+                logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+                all_logistic_preds_concs[f"{metab}_mean"]  = metab_const * all_logistic_preds[f"{metab}_mean"]
+                all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
+                all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
 
     # write logistic params for metabolites after scaling to mMol
     os.makedirs(os.path.join(output_dir, "logistic_params_conc"), exist_ok=True)
@@ -503,13 +579,13 @@ for i, target_col in enumerate(metabolites):
     print(target_col)
     ax1.plot(all_logistic_preds_concs[f"{target_col}_times"],
             all_logistic_preds_concs[f"{target_col}_mean"],
-            linewidth=2, color=colors[i], label=f'{target_col} 95% CI')
+            linewidth=2, label=f'{target_col} 95% CI')
     ax1.fill_between(all_logistic_preds_concs[f"{target_col}_times"],
                     all_logistic_preds_concs[f"{target_col}_lower"],
                     all_logistic_preds_concs[f"{target_col}_upper"],
-                    color=colors[i], alpha=0.2, label='_nolegend_')
+                    alpha=0.2, label='_nolegend_')
     ax1.scatter(df_grouped_conc["Time"], df_grouped_conc[target_col],
-                color=colors[i], s=16, label='_nolegend_')
+                s=16, label='_nolegend_')
 
 # Common labels and legend
 ax1.set_xlabel('Time (hours)')
@@ -518,6 +594,35 @@ ax1.set_ylabel('Scaled Concentration (mMol)')
 # ax1.set_title("Logistic Fits (Means + 95% CI)")
 ax1.legend()
 plt.tight_layout()
-output_trajct_fname = f"logistic_fits_concs_{exp_name}.pdf"
-plt.savefig(os.path.join(output_dir, "logistic_params_conc", output_trajct_fname))
+# output_trajct_fname = f"logistic_fits_concs_{exp_name}.pdf"
+# plt.savefig(os.path.join(output_dir, "logistic_params_conc", output_trajct_fname))
 plt.show()
+
+# save plots to multiple pdf pages
+pdf_out = os.path.join(output_dir, "logistic_params_conc", f"logistic_fits_concs_{exp_name}.pdf")
+with PdfPages(pdf_out) as pdf:
+    for group_name, group_metabolites in METABOLITE_GROUPS.items():
+        group_metabolites = [m for m in group_metabolites if m in metabolites]
+        if not group_metabolites:
+            continue
+        fig, ax1 = plt.subplots(1, 1, figsize=(5, 4))
+        for target_col in group_metabolites:
+            i = metabolites.index(target_col)
+            line, = ax1.plot(all_logistic_preds_concs[f"{target_col}_times"],
+                     all_logistic_preds_concs[f"{target_col}_mean"],
+                     linewidth=2, label=target_col)
+            color = line.get_color()
+            ax1.fill_between(all_logistic_preds_concs[f"{target_col}_times"],
+                             all_logistic_preds_concs[f"{target_col}_lower"],
+                             all_logistic_preds_concs[f"{target_col}_upper"],
+                             color=color, alpha=0.2, label='_nolegend_')
+            ax1.scatter(df_grouped_conc["Time"], df_grouped_conc[target_col],
+                        color=color, s=16, label='_nolegend_')
+        ax1.set_xlabel('Time (hours)')
+        ax1.set_ylabel('Scaled Concentration (mMol)')
+        ax1.set_title(group_name)
+        ax1.legend()
+        plt.tight_layout()
+        pdf.savefig()
+        plt.close()
+print(f"Saved: {pdf_out}")

@@ -29,7 +29,7 @@ config.optionxform = str   # <-- turn off lowercasing
 # 1H mixture (fid 25)
 # config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells_1H_mixture.ini")
 # config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells_1H_standard2.ini")
-config.read("config_dfba_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+config.read("config/config_dfba_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
 
 output_dir = config["dfba_params"]["output_dir"]
 os.makedirs(output_dir, exist_ok=True)
@@ -830,7 +830,7 @@ for rxn in model.reactions:
 # ─────────────────────────────────────────────────────────────────────────────
 
 constraints = {}
-dfba_consts = {k:v for k, v in config["dfba_constraints"].items()}
+dfba_consts = {k:v for k, v in config["dfba_constraints"].items() if k not in config.defaults()}
 for constraint, const_file in dfba_consts.items():
     lg_df = pd.read_csv(os.path.join(config["dfba_params"]["logistic_param_dir"], const_file))
     flip_sign = constraint.startswith("Ex_")  # flip sign for uptake constraints

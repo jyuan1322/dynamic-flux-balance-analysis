@@ -39,7 +39,7 @@ config.optionxform = str   # <-- turn off lowercasing
 # config.read("config_janfeb_reference_13C_1H.ini")
 # May 26, 2026 exp 5
 # config.read("config_may262026_UGA_HRMAS_13C_Cells.ini")
-config.read("config_may262026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+config.read("config/config_may262026_UGA_HRMAS_13C_Cells_1H_standard.ini")
 
 # METABOLITE_GROUPS = {
 #     "Set 1": ["13C_Glucose", "13C_Acetate", "13C_Ethanol"],
@@ -146,7 +146,7 @@ else:
 
 if not preprocessed_concs:
     # rescale according to proton number
-    proton_num = {k: float(v) for k, v in config["proton_num"].items()}
+    proton_num = {k: float(v) for k, v in config["proton_num"].items() if k not in config.defaults()}
     for metabolite, protons in proton_num.items():
         if metabolite in df_grouped.columns:
             df_grouped[metabolite] = df_grouped[metabolite] / protons
@@ -497,6 +497,8 @@ else:
 
     # set the initial value to the known initial concentration
     for metab, initial_conc in config["scale_mMol_to_initial"].items():
+        if metab in config.defaults():
+            continue
         initial_conc = float(initial_conc)
         if metab in df_grouped_conc.columns:
             initial_area = df_grouped_conc[metab].iloc[0]
@@ -531,6 +533,8 @@ else:
         glucose_initial_conc = df_grouped_conc["13C_Glucose"].iloc[0] # in mMol, however it was obtained
         glucose_upper_asymp = logistic_params.loc["13C_Glucose", "B"]
         for metab, ratio_slope in config["scale_mMol_to_glc_ratio"].items():
+            if metab in config.defaults():
+                continue
             ratio_slope = float(ratio_slope)
             if metab in df_grouped_conc.columns:
                 # upper_asymp_value = logistic_params.loc[metab, "B"]
@@ -549,6 +553,8 @@ else:
         dss_known_conc = float(config["scale_mMol_to_dss"]["dss_known_conc"]) # mMol
         dss_area_mean = df_grouped["DSS"].mean()
         for metab, ratio_slope in config["scale_mMol_to_dss"].items():
+            if metab in config.defaults():
+                continue
             ratio_slope = float(ratio_slope)
             if metab in df_grouped_conc.columns:
                 # per-timepoint scaling for raw data

@@ -39,7 +39,9 @@ config.optionxform = str   # <-- turn off lowercasing
 # config.read("config_janfeb_reference_13C_1H.ini")
 # May 26, 2026 exp 5
 # config.read("config_may262026_UGA_HRMAS_13C_Cells.ini")
-config.read("config/config_may262026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+# config.read("config/config_may262026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+# config.read("config/config_UGA_HRMAS_13C_Cells_1H_standard.ini")
+config.read("config/config_UGA_HRMAS_13C_Cells.ini")
 
 # METABOLITE_GROUPS = {
 #     "Set 1": ["13C_Glucose", "13C_Acetate", "13C_Ethanol"],
@@ -515,6 +517,8 @@ else:
     # set the upper asymptote value (either initial or final) to the known
     # initial concentration
     for metab, initial_conc in config["scale_mMol_to_asymptote"].items():
+        if metab in config.defaults():
+            continue
         initial_conc = float(initial_conc)
         if metab in df_grouped_conc.columns:
             upper_asymp_value = logistic_params.loc[metab, "B"]

@@ -12,7 +12,9 @@ from spectral_alignment import edit_ppm_shifts, apply_ppm_shifts, edit_baseline
 # read from config file
 config = configparser.ConfigParser()
 config.optionxform = str
-config.read("config/config_may262026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+# config.read("config/config_UGA_HRMAS_13C_Cells.ini")
+config.read("config/config_UGA_HRMAS_13C_Cells_1H_standard.ini")
+
 
 plt.close('all')
 

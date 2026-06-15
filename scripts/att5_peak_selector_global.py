@@ -491,24 +491,11 @@ def _make_fitter_window(x_data, y_display, label,
 # ---------------------------------------------------------------------------
 # Window 1 — Background fitter
 # ---------------------------------------------------------------------------
-
 def interactive_background_fitter(x_data, y_data_all, label,
                                    prominence_factor=0.05,
                                    init_bounds=None, seed=101,
                                    real_times=None, trace_mask=None,
                                    baseline=None):
-    """
-    Interactive background peak fitter (Window 1).
-
-    Identical UI to the signal fitter: draggable center lines, fresh + pinned
-    refit buttons, ROI sliders (orange), n_bkg_peaks textbox, max_iters.
-    A 'Skip' button closes without fitting.
-
-    Returns
-    -------
-    y_background : ndarray (N, T) or None
-    bkg_state    : dict
-    """
     if x_data[0] > x_data[-1]:
         x_data     = x_data[::-1]
         y_data_all = y_data_all[::-1, :]
@@ -520,61 +507,113 @@ def interactive_background_fitter(x_data, y_data_all, label,
         trace_mask = np.array(trace_mask, dtype=bool)
     active_indices = np.where(trace_mask)[0]
 
-    result_holder = {"y_background": None, "bkg_state": {}}
+    accumulated_background = None
+    pass_number = 1
 
-    def _extra(fig, ax):
-        ax_skip = plt.axes([0.60, 0.06, 0.18, 0.04])
-        btn_skip = Button(ax_skip, "Skip (no background)")
-        def on_skip(e):
-            print("Background fitting skipped.")
-            plt.close(fig)
-        btn_skip.on_clicked(on_skip)
-        # keep reference alive
-        fig._btn_skip     = btn_skip
-        fig._ax_btn_skip  = ax_skip
-
-    fig, ax, window_state, widgets = _make_fitter_window(
-        x_data=x_data,
-        y_display=y_data_all,
-        label=(f"{label}\n"
-               f"Fit background peaks, then close the window.  "
-               f"'Skip' for no background correction."),
-        active_indices=active_indices,
-        trace_mask=trace_mask,
-        n_traces_total=n_traces_total,
-        baseline=baseline,
-        prominence_factor=prominence_factor,
-        init_bounds=init_bounds,
-        seed=seed,
-        real_times=real_times,
-        n_peaks_label="n_bkg_peaks",
-        roi_color="orange",
-        extra_buttons_factory=_extra,
-    )
-
-    def on_close(event):
-        ws  = widgets["window_state"]
-        fp  = ws.get("fitted_params")
-        n_p = ws.get("n_peaks", 0)
-        if fp is not None and n_p > 0:
-            y_bkg = _eval_lorentzians(fp, x_data, n_p, active_indices,
-                                      n_traces_total, trace_mask)
-            result_holder["y_background"] = y_bkg
-            result_holder["bkg_state"]    = {
-                "n_bkg_peaks": n_p,
-                "bkg_roi":     (ws["lower_ppm_bound"], ws["upper_ppm_bound"]),
-                "chisqr":      ws.get("chisqr"),
-                "redchi":      ws.get("redchi"),
-                "baseline_val": ws.get("baseline_val"),
-            }
-            print(f"\nBackground profile captured ({n_p} peak(s)).")
+    while True:
+        if accumulated_background is not None:
+            y_residual = y_data_all - accumulated_background
         else:
-            print("\nNo background fit recorded — no subtraction will be applied.")
+            y_residual = y_data_all
 
-    fig.canvas.mpl_connect("close_event", on_close)
-    plt.show()
+        result_holder = {"y_background": None, "bkg_state": {}, "do_again": False}
 
-    return result_holder["y_background"], result_holder["bkg_state"]
+        def _extra(fig, ax):
+            ax_skip  = plt.axes([0.60, 0.06, 0.18, 0.04])
+            ax_again = plt.axes([0.60, 0.01, 0.18, 0.04])
+            btn_skip  = Button(ax_skip,  "Skip (no background)")
+            btn_again = Button(ax_again, "Correct Again")
+
+            def on_skip(e):
+                print("Background fitting skipped.")
+                plt.close(fig)
+
+            def on_again(e):
+                ws  = widgets["window_state"]
+                fp  = ws.get("fitted_params")
+                n_p = ws.get("n_peaks", 0)
+                if fp is not None and n_p > 0:
+                    result_holder["do_again"] = True
+                    plt.close(fig)
+                else:
+                    print("No fit recorded for this pass — run a fit before correcting again.")
+
+            btn_skip.on_clicked(on_skip)
+            btn_again.on_clicked(on_again)
+
+            fig._btn_skip     = btn_skip
+            fig._btn_again    = btn_again
+            fig._ax_btn_skip  = ax_skip
+            fig._ax_btn_again = ax_again
+
+        fig, ax, window_state, widgets = _make_fitter_window(
+            x_data=x_data,
+            y_display=y_residual,
+            label=(f"{label}\n"
+                   f"Pass {pass_number}"
+                   + (" [residual after previous correction]" if pass_number > 1 else "")
+                   + " — fit background peaks, then close or correct again."),
+            active_indices=active_indices,
+            trace_mask=trace_mask,
+            n_traces_total=n_traces_total,
+            baseline=baseline,
+            prominence_factor=prominence_factor,
+            init_bounds=init_bounds,
+            seed=seed + pass_number,
+            real_times=real_times,
+            n_peaks_label="n_bkg_peaks",
+            roi_color="orange",
+            extra_buttons_factory=_extra,
+        )
+
+        def on_close(event):
+            ws  = widgets["window_state"]
+            fp  = ws.get("fitted_params")
+            n_p = ws.get("n_peaks", 0)
+            if fp is not None and n_p > 0:
+                y_this_pass = _eval_lorentzians(
+                    fp, x_data, n_p, active_indices,
+                    n_traces_total, trace_mask
+                )
+                result_holder["y_background"] = y_this_pass
+                result_holder["bkg_state"] = {
+                    "n_bkg_peaks":  n_p,
+                    "bkg_roi":      (ws["lower_ppm_bound"], ws["upper_ppm_bound"]),
+                    "chisqr":       ws.get("chisqr"),
+                    "redchi":       ws.get("redchi"),
+                    "baseline_val": ws.get("baseline_val"),
+                    "n_passes":     pass_number,
+                }
+                print(f"\nBackground pass {pass_number} captured ({n_p} peak(s)).")
+            else:
+                print(f"\nNo fit recorded for pass {pass_number}.")
+
+        fig.canvas.mpl_connect("close_event", on_close)
+        plt.show()  # blocks until window is closed
+
+        # Accumulate this pass's result
+        if result_holder["y_background"] is not None:
+            accumulated_background = (
+                result_holder["y_background"] if accumulated_background is None
+                else accumulated_background + result_holder["y_background"]
+            )
+            last_bkg_state = result_holder["bkg_state"]
+        else:
+            if pass_number == 1:
+                last_bkg_state = {}
+
+        # Loop again or exit
+        if result_holder["do_again"]:
+            pass_number += 1
+            continue
+        else:
+            break
+
+    if accumulated_background is not None:
+        last_bkg_state["n_passes"] = pass_number
+        print(f"\nTotal background passes: {pass_number}")
+
+    return accumulated_background, last_bkg_state if accumulated_background is not None else {}
 
 
 # ---------------------------------------------------------------------------

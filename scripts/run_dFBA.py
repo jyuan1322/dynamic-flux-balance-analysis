@@ -11,6 +11,7 @@ from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import gaussian_filter1d
 from scipy.special import expit
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 from networkx.algorithms.traversal.depth_first_search import dfs_tree
 from networkx.drawing.nx_agraph import graphviz_layout
 from cycler import cycler
@@ -29,7 +30,8 @@ config.optionxform = str   # <-- turn off lowercasing
 # 1H mixture (fid 25)
 # config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells_1H_mixture.ini")
 # config.read("config_dfba_jan302026_UGA_HRMAS_13C_Cells_1H_standard2.ini")
-config.read("config/config_dfba_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+# config.read("config/config_dfba_may222026_UGA_HRMAS_13C_Cells_1H_standard.ini")
+config.read("config/config_dfba_UGA_HRMAS_13C_Cells.ini")
 
 output_dir = config["dfba_params"]["output_dir"]
 os.makedirs(output_dir, exist_ok=True)
@@ -271,7 +273,8 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
     return evaluate
 '''
 def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign: bool = True,
-                           buffer_val: float = None, bound_scale: float = 1.0):
+                           bound_scale: float = 1.0):
+    # buffer_val: float = None,
     df = df_params.copy()
 
     required = ["A", "B", "C", "D"]
@@ -286,10 +289,8 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
                         (1 - expit((t - row["C"]) / row["D"])),
             axis=1
         )
-        print(f"[DEBUG pre-flip] t={t:.2f} sample values: {values.values[:3]}")
         if flip_sign:
             values = -1 * values # sign flip for intake into microbes
-            print(f"[DEBUG post-flip] t={t:.2f} sample values: {values.values[:3]}")
 
         # Compute mean and confidence intervals
         mean = values.mean()
@@ -306,43 +307,13 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
         else:
             upper = min(upper, 0)
 
-        if buffer_val is not None:
-            lower -= buffer_val
-            upper += buffer_val
+        # if buffer_val is not None:
+        #     lower -= buffer_val
+        #     upper += buffer_val
         return lower, upper
 
     return evaluate
 
-# pro_csv_paths = [
-#     "concentration_estimation/Data1_13CPro1_areas.csv",
-#     "concentration_estimation/Data2_13CPro2_areas.csv",
-#     "concentration_estimation/Data3_13CPro3_areas.csv"
-# ]
-# leu_csv_paths = [
-#     "concentration_estimation/Data4_13CLeu1_areas.csv"
-# ]
-# glc_csv_paths = [
-#     "concentration_estimation/Data8_13CGlc2_areas.csv"
-# ]
-# Pro1 time_range = (0, 48), steps_per_hour=5
-# Pro2 time_range = (-7, 33), steps_per_hour=5
-# Pro3 time_range = (-11, 30), steps_per_hour=5
-"""
-time_ranges = {
-    "13CPro1": (0, 48),
-    "13CPro2": (-7, 33),
-    "13CPro3": (-11, 30)
-}
-time_ranges = {
-    "13CLeu1": (-12, 24)
-}
-"""
-# time_ranges = {
-#     "13CGlc2": (11, 109)
-# }
-# time_ranges = {
-#     "13CGlc1": (0, 63)
-# }
 time_range = config["dfba_params"]["time_range"]
 
 '''
@@ -810,21 +781,41 @@ model.objective = objective
 # leucine causes infeasible solution
 # glycine
 # histidine causes an FVA crash
-amino_rxns = ["Ex_cysL", "Ex_glc", "Ex_argL", "Ex_metL"
-              "Ex_proL", "Ex_ileL", "Ex_thrL", "Ex_trpL"]
+# amino_rxns = ["Ex_cysL", "Ex_glc", "Ex_argL", "Ex_metL"
+#               "Ex_proL", "Ex_ileL", "Ex_thrL", "Ex_trpL"]
+
+amino_rxns = []
 
 for rxn in model.reactions:
     if (rxn.id in amino_rxns): # bounds=(0.0, 4.13)
         rxn.upper_bound *= 0.03
 
+# for rxn in model.reactions:
+#     if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
+#         rxn.upper_bound *= 0.03
+#         # rxn.upper_bound = 0.03
+#     if rxn.id in ['Ex_valL', 'Ex_ileL']:
+#         rxn.upper_bound *= 0.03
+#         # rxn.lower_bound = 0
+
 model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
 model.reactions.Ex_cysL.upper_bound = 1000
+
+# to debug alanine transaminase
+# model.reactions.get_by_id("ID_357").upper_bound = 0
+# model.reactions.get_by_id("ID_357").lower_bound = 0
+# model.reactions.get_by_id("ID_506").upper_bound = 0
+# model.reactions.get_by_id("ID_506").lower_bound = 0
+# model.reactions.get_by_id("ID_glyamintrans").upper_bound = 0
+# model.reactions.get_by_id("ID_glyamintrans").lower_bound = 0
+# model.reactions.get_by_id("Trans_alaL_PMF").upper_bound = 0
+# model.reactions.get_by_id("Trans_alaL_PMF").lower_bound = 0
 
 # ── PRINT AIDAN'S BOUNDS ─────────────────────────────────────────────────────
 print("Bounds after Aidan's block:")
 for rxn in model.reactions:
     if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) \
-            or rxn.id in ['Ex_gly', 'Ex_his', 'Ex_glc', 'Ex_cysL']:
+            or rxn.id in ['Ex_gly', 'Ex_his', 'Ex_glc', 'Ex_cysL', 'ID_357', 'ID_506', 'ID_glyamintrans']:
         print(f"  {rxn.id} ({rxn.name}): bounds=({rxn.lower_bound}, {rxn.upper_bound})")
 # exit()
 # ─────────────────────────────────────────────────────────────────────────────
@@ -837,42 +828,49 @@ for constraint, const_file in dfba_consts.items():
     flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=flip_sign, bound_scale=1.0)
     # flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
     constraints[constraint] = MetaboliteConstraint(constraint, flux_fn)
-"""
-constraints = {
-    "Ex_glc": MetaboliteConstraint("Ex_glc", glc_flux_fn),
-    "Sec_but": MetaboliteConstraint("Sec_but", but_flux_fn),
-    "Sec_ac": MetaboliteConstraint("Sec_ac", ace_flux_fn),
-    "Sec_alaL": MetaboliteConstraint("Sec_alaL", ala_flux_fn),
-    "Sec_eto": MetaboliteConstraint("Sec_eto", eth_flux_fn),
-    "Sec_ival": MetaboliteConstraint("Sec_ival", isv_flux_fn),
-    # 1H metabolites
-    "Sec_5apn": MetaboliteConstraint("Sec_5apn", av5_flux_fn),
-    # "Ex_argL": MetaboliteConstraint("Ex_argL", arg_flux_fn),
-    # "Ex_his": MetaboliteConstraint("Ex_his", his_flux_fn),
-    "Sec_isocap": MetaboliteConstraint("Sec_isocap", iso_flux_fn),
-    "Ex_leuL": MetaboliteConstraint("Ex_leuL", leu_flux_fn),
-    # "Ex_metL": MetaboliteConstraint("Ex_metL", met_flux_fn),
-    "Ex_proL": MetaboliteConstraint("Ex_proL", pro_flux_fn),
-    # "Ex_thrL": MetaboliteConstraint("Ex_thrL", thr_flux_fn),
-    # "Ex_trpL": MetaboliteConstraint("Ex_trpL", thr_flux_fn)
-}
-# proline and 5apn interfere
-# leu and isocap interfere
-"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Plot bounds of all constraint metabolites for debugging
+# ─────────────────────────────────────────────────────────────────────────────
+t_plot = np.linspace(
+    float(config["dfba_params"].get("t_start", "0")),
+    float(time_range.split(",")[1].strip()),
+    300
+)
+
+pdf_out = os.path.join(config["dfba_params"]["output_dir"], "constraint_bounds.pdf")
+with PdfPages(pdf_out) as pdf:
+    for rxn_id, constraint in constraints.items():
+        lbs, ubs = [], []
+        for t in t_plot:
+            lb, ub = constraint.get_bounds(t)
+            lbs.append(lb)
+            ubs.append(ub)
+
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(t_plot, lbs, label="lb", color="blue")
+        ax.plot(t_plot, ubs, label="ub", color="red")
+        ax.fill_between(t_plot, lbs, ubs, alpha=0.2)
+        ax.axhline(0, color="k", linewidth=0.5, linestyle="--")
+        ax.set_title(rxn_id)
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Flux bound")
+        ax.legend()
+        plt.tight_layout()
+        pdf.savefig(fig)
+        plt.close()
+
+print(f"Constraint bounds saved to {pdf_out}")
+
+
+
+
+
 tracked_reactions = [
     x.strip()
     for x in config["dfba_tracked_reactions"]["ids"].split(",")
     if x.strip()
 ]
-
-# ── CHECK BOUNDS AT t=10 ─────────────────────────────────────────────────────
-for rxn_id in ["Ex_glc", "Ex_proL", "Sec_ac"]:
-    if rxn_id in constraints:
-        lb, ub = constraints[rxn_id].get_bounds(10)
-        print(f"{rxn_id} at t=10: get_bounds → ({lb:.6f}, {ub:.6f})")
-# exit()
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 
 """
@@ -1017,7 +1015,7 @@ interesting_reactions_lt2 = [rxn for rxn in interesting_reactions_lt2
                             and rxn not in bounding_reactions]
 
 
-def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.html"):
+def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.html", display_plot=True):
     """
     Plot raw fluxes for specified reactions and save as HTML.
     """
@@ -1051,14 +1049,14 @@ def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.htm
     fig.write_html(outname)
     fig.show()
 
-plot_raw_fluxes_html(flux_df, interesting_reactions, model=model,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_all_v4_{exp_name}.html'))
-plot_raw_fluxes_html(flux_df, bounding_reactions, model=model,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_bounding_v4_{exp_name}.html'))
-plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, model=model,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_gt2_v4_{exp_name}.html'))
-plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_v2_lt2_v4_{exp_name}.html'))
+plot_raw_fluxes_html(flux_df, interesting_reactions, model=model, display_plot=False,
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_all_{exp_name}.html'))
+plot_raw_fluxes_html(flux_df, bounding_reactions, model=model, display_plot=False,
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_bounding_{exp_name}.html'))
+plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, model=model, display_plot=False,
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_gt2_{exp_name}.html'))
+plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model, display_plot=False,
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_lt2_{exp_name}.html'))
 
 flux_df.to_csv(os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv'))
 
@@ -1067,11 +1065,9 @@ flux_df.to_csv(os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_a
 
 
 
-
+# ------------------------------
 # Compare to NatChemBio Figure 3
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
+# ------------------------------
 
 # Load data
 dfall = pd.read_csv(

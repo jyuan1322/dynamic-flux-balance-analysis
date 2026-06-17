@@ -40,24 +40,38 @@ config.optionxform = str   # <-- turn off lowercasing
 # May 26, 2026 exp 5
 # config.read("config_may262026_UGA_HRMAS_13C_Cells.ini")
 # config.read("config/config_may262026_UGA_HRMAS_13C_Cells_1H_standard.ini")
-# config.read("config/config_UGA_HRMAS_13C_Cells_1H_standard.ini")
-config.read("config/config_UGA_HRMAS_13C_Cells.ini")
+config.read("config/config_UGA_HRMAS_13C_Cells_1H_standard.ini")
+# config.read("config/config_UGA_HRMAS_13C_Cells.ini")
 
 # METABOLITE_GROUPS = {
 #     "Set 1": ["13C_Glucose", "13C_Acetate", "13C_Ethanol"],
 #     "Set 2": ["13C_CO2", "13C_Lactate", "13C_Alanine"],
 #     # "Set 3": ["13C_Glucose", "13C_Ethanol", "13C_Butyrate"],
 # }
+# METABOLITE_GROUPS = {
+#     "Set 1": ["NT_Proline", "NT_5-aminovalerate", "DSS"],
+#     "Set 2": ["NT_Butyrate", "NT_Isobutyrate", "13C_Acetate", "NT_Acetate"],
+#     "Set 3": ["NT_Leucine", "NT_Isoleucine", "NT_Isovalerate"],
+#     "Set 4": ["13C_Lactate", "13C_Pyruvate", "NT_Pyruvate"],
+#     "Set 5": ["NT_Isocaproate", "13C_Formate", "NT_Formate"],
+#     "Set 6": ["13C_Glucose", "Glucose", "13C_Alanine", "13C_Ethanol", "NT_Ethanol"],
+#     "Set 7": ["NT_Arginine", "NT_Histidine", "NT_Methionine", "NT_Proprionate"],
+#     "Set 8": ["NT_Threonine", "NT_Tryptophan", "NT_Valine", "NT_Glycine"],
+# }
+
 METABOLITE_GROUPS = {
-    "Set 1": ["NT_Butyrate", "NT_Isobutyrate", "13C_Acetate", "NT_Acetate"],
-    "Set 2": ["NT_Proline", "NT_5-aminovalerate", "DSS"],
-    "Set 3": ["NT_Leucine", "NT_Isoleucine", "NT_Isovalerate"],
-    "Set 4": ["13C_Lactate", "13C_Pyruvate", "NT_Pyruvate"],
-    "Set 5": ["NT_Isocaproate", "13C_Formate", "NT_Formate"],
-    "Set 6": ["13C_Glucose", "Glucose", "13C_Alanine", "13C_Ethanol"],
-    "Set 7": ["NT_Arginine", "NT_Histidine", "NT_Methionine" ],
-    "Set 8": ["NT_Threonine", "NT_Tryptophan", "NT_Valine"],
+    "Set 1": ["NT_Proline", "NT_5-aminovalerate"],
+    "Set 2": ["13C_Glucose", "13C_Acetate", "13C_Ethanol", "13C_Alanine", "13C_Lactate", "13C_Pyruvate", "13C_Formate"],
+    "Set 3": ["NT_Leucine", "NT_Isocaproate", "NT_Isovalerate"],
+    "Set 4": ["NT_Glycine", "NT_Acetate", "NT_Ethanol"],
+    "Set 5": ["NT_Threonine", "NT_Propionate"],
+    "Set 6": ["NT_Valine", "NT_Isobutyrate"],
+    "Set 7": ["NT_Isoleucine"],
+    "Set 8": ["NT_Arginine", "NT_Histidine", "NT_Tryptophan"],
+    "Set 9": ["NT_Methionine", "NT_Formate", "NT_Pyruvate"],
 }
+
+
 
 input_dir = config['trajectories']['input_dir']
 output_dir = config['trajectories']['output_dir']
@@ -242,7 +256,8 @@ model {
     D_mag ~ student_t(3, 0, 1); // slope magnitude
     //D_sign_raw ~ normal(0, 1);  // slope sign
 
-    sigma ~ normal(0, 0.1 * 1);            // noise std
+    // sigma ~ normal(0, 0.1 * 1);            // noise std
+    sigma ~ student_t(3, 0, 0.1 * 1);            // noise std
 
     // Likelihood
     // inv_logit is the logistic function
@@ -265,11 +280,13 @@ model {
     # with open(f"stan_logistic_samples_{exp_id}_fit.pkl", "wb") as f:  # "wb" = write binary
     #     pickle.dump(posterior_df, f)
 
-    logistic_df = posterior_df[["A", "B", "C", "D"]].copy()
+    logistic_df = posterior_df[["A", "B", "C", "D", "sigma"]].copy()
     logistic_df['A'] = logistic_df['A'] * y_scale
     logistic_df['B'] = logistic_df['B'] * y_scale
     logistic_df['C'] = logistic_df['C'] * x_scale
     logistic_df['D'] = logistic_df['D'] * x_scale
+    # sigma is in y-space only
+    logistic_df['sigma'] = logistic_df['sigma'] * y_scale
 
     with open(pickle_out, "wb") as f:  # "wb" = write binary
         pickle.dump(logistic_df, f)
@@ -286,29 +303,39 @@ def plot_logistic_fit(logistic_df, corrected_times, scaled_concs, target_col):
     )
 
     # Plot the posterior samples
-    y_preds = []
+    y_means = []
+    y_lowers = []
+    y_uppers = []
     for i in range(logistic_df.shape[0]):
         A = logistic_df['A'].iloc[i]
         B = logistic_df['B'].iloc[i]
         C = logistic_df['C'].iloc[i]
         D = logistic_df['D'].iloc[i]
-        y_fit = A + (B-A) * (1 / (1 + np.exp(-(corrected_times - C) / D)))
-        y_preds.append(y_fit)
-        ax2.plot(corrected_times, y_fit, color='blue', alpha=0.01)
+        sigma = logistic_df['sigma'].iloc[i]
+        y_mean = A + (B-A) * (1 / (1 + np.exp(-(corrected_times.values - C) / D)))
+        # y_preds.append(y_fit)
+        y_means.append(y_mean)
+        y_lowers.append(y_mean - 1.96 * sigma)
+        y_uppers.append(y_mean + 1.96 * sigma)
 
-    y_preds = np.array(y_preds)
+        ax2.plot(corrected_times, y_mean, color='blue', alpha=0.01)
+
+    # y_preds = np.array(y_preds)
 
     # Compute mean and standard error
-    y_mean = np.mean(y_preds, axis=0)
-    y_std = np.std(y_preds, axis=0)
-    lower, upper = np.percentile(y_preds, [2.5, 97.5], axis=0)
+    # y_mean = np.mean(y_preds, axis=0)
+    # y_std = np.std(y_preds, axis=0)
+    # lower, upper = np.percentile(y_preds, [2.5, 97.5], axis=0)
+    y_means = np.mean(y_means, axis=0)
+    y_lowers = np.mean(y_lowers, axis=0)
+    y_uppers = np.mean(y_uppers, axis=0)
 
     # Plot mean and ±SE
-    ax1.plot(corrected_times, y_mean, color='red', linewidth=2, label='Mean')
-    ax1.plot(corrected_times, lower, color='blue', linewidth=1, label='± 95% CI')
-    ax1.plot(corrected_times, upper, color='blue', linewidth=1)
-    ax1.plot(corrected_times, y_mean - y_std, color='green', linewidth=1, label='± 1 std')
-    ax1.plot(corrected_times, y_mean + y_std, color='green', linewidth=1)
+    ax1.plot(corrected_times, y_means, color='red', linewidth=2, label='Mean')
+    ax1.plot(corrected_times, y_lowers, color='blue', linewidth=1, label='± 95% CI')
+    ax1.plot(corrected_times, y_uppers, color='blue', linewidth=1)
+    # ax1.plot(corrected_times, y_mean - y_std, color='green', linewidth=1, label='± 1 std')
+    # ax1.plot(corrected_times, y_mean + y_std, color='green', linewidth=1)
 
     # Scatter original data
     ax1.scatter(corrected_times, scaled_concs, label='Scaled Concentration Data', s=16, color='black')
@@ -340,23 +367,32 @@ for col in metabolites:
 # single plot for all samples
 def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_col, color):
     # Posterior samples
-    y_preds = []
+    y_means = []
+    y_lowers = []
+    y_uppers = []
     # for i in range(logistic_df.shape[0]):
     #     A, B, C, D = logistic_df.loc[i, ["A", "B", "C", "D"]]
     for i in range(logistic_df.shape[0]):
         A, B, C, D = logistic_df.iloc[i][["A", "B", "C", "D"]]  # <<< .iloc not .loc
-        y_fit = A + (B - A) * (1 / (1 + np.exp(-(corrected_times - C) / D)))
-        y_preds.append(y_fit)
+        sigma = logistic_df['sigma'].iloc[i]
+        y_fit = A + (B - A) * (1 / (1 + np.exp(-(corrected_times.values - C) / D)))
+        # y_preds.append(y_fit)
+        y_means.append(y_fit)
+        y_lowers.append(y_fit - 1.96 * sigma)
+        y_uppers.append(y_fit + 1.96 * sigma)
         # ax2.plot(corrected_times, y_fit, color=color, alpha=0.01)
 
-    y_preds = np.array(y_preds)
+    # y_preds = np.array(y_preds)
 
     # Mean + 95% CI
-    y_mean = np.mean(y_preds, axis=0)
-    lower, upper = np.percentile(y_preds, [2.5, 97.5], axis=0)
+    # y_mean = np.mean(y_preds, axis=0)
+    # lower, upper = np.percentile(y_preds, [2.5, 97.5], axis=0)
+    y_means = np.mean(y_means, axis=0)
+    y_lowers = np.mean(y_lowers, axis=0)
+    y_uppers = np.mean(y_uppers, axis=0)
 
-    ax1.plot(corrected_times, y_mean, linewidth=2, color=color, label=f'{target_col} 95% CI')
-    ax1.fill_between(corrected_times, lower, upper,
+    ax1.plot(corrected_times, y_means, linewidth=2, color=color, label=f'{target_col} 95% CI')
+    ax1.fill_between(corrected_times, y_lowers, y_uppers,
                      color=color, alpha=0.2, label='_nolegend_')
 
     # Original data
@@ -364,7 +400,7 @@ def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_c
     # logistic_pred_lists = [corrected_times, y_mean, lower, upper]
     # logistic_pred_cols = [f"{target_col}_times", f"{target_col}_mean", f"{target_col}_lower", f"{target_col}_upper"]
     # logistic_pred_df = pd.DataFrame(dict(zip(logistic_pred_cols, logistic_pred_lists)))
-    logistic_pred_lists = [corrected_times.values, y_mean, lower, upper]  # <<< .values
+    logistic_pred_lists = [corrected_times.values, y_means, y_lowers, y_uppers]  # <<< .values
     logistic_pred_cols = [f"{target_col}_times", f"{target_col}_mean", f"{target_col}_lower", f"{target_col}_upper"]
     logistic_pred_df = pd.DataFrame(dict(zip(logistic_pred_cols, logistic_pred_lists)))
     return logistic_pred_df
@@ -509,6 +545,7 @@ else:
             # adjust logistic params
             logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
             logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+            logistic_df_dict_conc[metab]["sigma"] = metab_const * logistic_df_dict[metab]["sigma"]  # add this
             # for plotting
             all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
             all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
@@ -527,6 +564,7 @@ else:
             # adjust logistic params
             logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
             logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+            logistic_df_dict_conc[metab]["sigma"] = metab_const * logistic_df_dict[metab]["sigma"]  # add this
             # for plotting
             all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
             all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
@@ -547,6 +585,7 @@ else:
                 # adjust logstic params
                 logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
                 logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+                logistic_df_dict_conc[metab]["sigma"] = metab_const * logistic_df_dict[metab]["sigma"]  # add this
                 # for plotting
                 all_logistic_preds_concs[f"{metab}_mean"] = metab_const * all_logistic_preds[f"{metab}_mean"]
                 all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
@@ -568,6 +607,7 @@ else:
                 metab_const = ratio_slope * dss_known_conc / dss_area_mean
                 logistic_df_dict_conc[metab]["A"] = metab_const * logistic_df_dict[metab]["A"]
                 logistic_df_dict_conc[metab]["B"] = metab_const * logistic_df_dict[metab]["B"]
+                logistic_df_dict_conc[metab]["sigma"] = metab_const * logistic_df_dict[metab]["sigma"]  # add this
                 all_logistic_preds_concs[f"{metab}_mean"]  = metab_const * all_logistic_preds[f"{metab}_mean"]
                 all_logistic_preds_concs[f"{metab}_lower"] = metab_const * all_logistic_preds[f"{metab}_lower"]
                 all_logistic_preds_concs[f"{metab}_upper"] = metab_const * all_logistic_preds[f"{metab}_upper"]
@@ -631,8 +671,56 @@ with PdfPages(pdf_out) as pdf:
         ax1.set_xlabel('Time (hours)')
         ax1.set_ylabel('Scaled Concentration (mMol)')
         ax1.set_title(group_name)
-        ax1.legend()
+        # ax1.legend()
+        ax1.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3)
         plt.tight_layout()
         pdf.savefig()
         plt.close()
 print(f"Saved: {pdf_out}")
+
+
+# ----------------------------------------------------
+# Sum isovalerate + isocaproate and compare to leucine
+# ----------------------------------------------------
+# Sum isovalerate + isocaproate and compare to leucine
+fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+
+required = ["NT_Isovalerate", "NT_Isocaproate", "NT_Leucine"]
+if all(f"{m}_mean" in all_logistic_preds_concs.columns for m in required):
+    
+    times = all_logistic_preds_concs["NT_Leucine_times"]
+
+    # Isovalerate individually
+    line_isv, = ax.plot(times, all_logistic_preds_concs["NT_Isovalerate_mean"], linewidth=2, label="Isovalerate")
+    ax.fill_between(times, all_logistic_preds_concs["NT_Isovalerate_lower"], all_logistic_preds_concs["NT_Isovalerate_upper"], alpha=0.15, color=line_isv.get_color())
+    ax.scatter(df_grouped_conc["Time"], df_grouped_conc["NT_Isovalerate"], s=16, color=line_isv.get_color(), label="_nolegend_")
+
+    # Isocaproate individually
+    line_iso, = ax.plot(times, all_logistic_preds_concs["NT_Isocaproate_mean"], linewidth=2, label="Isocaproate")
+    ax.fill_between(times, all_logistic_preds_concs["NT_Isocaproate_lower"], all_logistic_preds_concs["NT_Isocaproate_upper"], alpha=0.15, color=line_iso.get_color())
+    ax.scatter(df_grouped_conc["Time"], df_grouped_conc["NT_Isocaproate"], s=16, color=line_iso.get_color(), label="_nolegend_")
+
+    # Sum isovalerate + isocaproate
+    combo_mean  = all_logistic_preds_concs["NT_Isovalerate_mean"]  + all_logistic_preds_concs["NT_Isocaproate_mean"]
+    combo_lower = all_logistic_preds_concs["NT_Isovalerate_lower"] + all_logistic_preds_concs["NT_Isocaproate_lower"]
+    combo_upper = all_logistic_preds_concs["NT_Isovalerate_upper"] + all_logistic_preds_concs["NT_Isocaproate_upper"]
+    line_combo, = ax.plot(times, combo_mean, linewidth=2, label="Isovalerate + Isocaproate")
+    ax.fill_between(times, combo_lower, combo_upper, alpha=0.2, color=line_combo.get_color())
+    ax.scatter(df_grouped_conc["Time"],
+               df_grouped_conc["NT_Isovalerate"] + df_grouped_conc["NT_Isocaproate"],
+               s=16, color=line_combo.get_color(), label="_nolegend_")
+
+    # Leucine
+    line_leu, = ax.plot(times, all_logistic_preds_concs["NT_Leucine_mean"], linewidth=2, label="Leucine")
+    ax.fill_between(times, all_logistic_preds_concs["NT_Leucine_lower"], all_logistic_preds_concs["NT_Leucine_upper"], alpha=0.2, color=line_leu.get_color())
+    ax.scatter(df_grouped_conc["Time"], df_grouped_conc["NT_Leucine"], s=16, color=line_leu.get_color(), label="_nolegend_")
+
+    ax.set_xlabel("Time (hours)")
+    ax.set_ylabel("Scaled Concentration (mMol)")
+    ax.set_title("Leucine vs Isovalerate + Isocaproate")
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
+    plt.tight_layout()
+    plt.show()
+else:
+    missing = [m for m in required if f"{m}_mean" not in all_logistic_preds_concs.columns]
+    print(f"Missing metabolites: {missing}")

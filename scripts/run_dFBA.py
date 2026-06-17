@@ -187,6 +187,7 @@ model {
     # return the df of sampled logistic curves
     return logistic_df, corrected_times, scaled_concs
 
+
 def plot_logistic_fit(logistic_df, corrected_times, scaled_concs, target_col):
     # plot the original data and the posterior samples
     fig, (ax1, ax2) = plt.subplots(
@@ -829,6 +830,14 @@ for constraint, const_file in dfba_consts.items():
     # flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
     constraints[constraint] = MetaboliteConstraint(constraint, flux_fn)
 
+for rxn_id, constraint in constraints.items():
+    print(f"\n--- {rxn_id} ---")
+    for t in [0, 10, 20, 30, 40]:
+        lb, ub = constraint.get_bounds(t)
+        print(f"  t={t}: lb={lb:.4f}, ub={ub:.4f}")
+
+
+"""
 # ─────────────────────────────────────────────────────────────────────────────
 # Plot bounds of all constraint metabolites for debugging
 # ─────────────────────────────────────────────────────────────────────────────
@@ -861,7 +870,7 @@ with PdfPages(pdf_out) as pdf:
         plt.close()
 
 print(f"Constraint bounds saved to {pdf_out}")
-
+"""
 
 
 
@@ -910,15 +919,6 @@ sim = dFBA(
     # fba_method=lambda m: m.optimize(), # use pfba instead
     time_range=tuple(map(float, time_range.split(","))),
     steps_per_hour=int(config["dfba_params"]["steps_per_hour"]), # 5
-    # tracked_reactions=["ATP_sink", "ID_314", "ID_135"],
-    # tracked_reactions=["ATP_sink", "ID_314", "ID_135", 
-    #                    "Trans_glc", "Ex_proL", "Ex_leuL", 
-    #                    "Ex_valL", "Ex_ileL", "Ex_thrL", "Sec_ac", 
-    #                    "Ex_alaL", "Ex_cysL", "Sec_ppa", "Sec_2abut", "ID_326"],
-    # tracked_reactions=["ATP_sink", "ID_251", "ID_252", "ID_512", "ID_474", "ID_49",
-    #                 "ID_280", "ID_321", "ID_146", "ID_366", "ID_1021311", "ID_1021312",
-    #                 "ID_1021313", "PPAKr", "ATPsynth4_1", "BUK", "IACK", "ImzACK", "HPhACK",
-    #                 "Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"],
     tracked_reactions = tracked_reactions,
     fva=True
 )

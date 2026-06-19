@@ -274,7 +274,7 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
     return evaluate
 '''
 def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign: bool = True,
-                           bound_scale: float = 1.0):
+                           bound_scale: float = 1.0, leak: float = 0.0, leak_tol: float = 1e-4):
     # buffer_val: float = None,
     df = df_params.copy()
 
@@ -307,6 +307,13 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
             lower = max(lower, 0)
         else:
             upper = min(upper, 0)
+
+        # only add a leak if both bounds are near zero
+        if abs(lower) <= leak_tol and abs(upper) <= leak_tol:
+            if mean >= 0:
+                upper += leak
+            else:
+                lower -= leak
 
         # if buffer_val is not None:
         #     lower -= buffer_val
@@ -787,20 +794,24 @@ model.objective = objective
 
 amino_rxns = []
 
-for rxn in model.reactions:
-    if (rxn.id in amino_rxns): # bounds=(0.0, 4.13)
-        rxn.upper_bound *= 0.03
-
 # for rxn in model.reactions:
-#     if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
+#     if (rxn.id in amino_rxns): # bounds=(0.0, 4.13)
 #         rxn.upper_bound *= 0.03
-#         # rxn.upper_bound = 0.03
-#     if rxn.id in ['Ex_valL', 'Ex_ileL']:
-#         rxn.upper_bound *= 0.03
-#         # rxn.lower_bound = 0
+
+for rxn in model.reactions:
+    if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
+        rxn.upper_bound *= 0.03
+        # rxn.upper_bound = 0.03
+    if rxn.id in ['Ex_valL', 'Ex_ileL']:
+        rxn.upper_bound *= 0.03
+        # rxn.lower_bound = 0
+    # May28 no butyrate?
+    # if rxn.id in ['Sec_but']:
+    #     rxn.upper_bound = 0
 
 model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
 model.reactions.Ex_cysL.upper_bound = 1000
+model.solver = 'glpk'
 
 # to debug alanine transaminase
 # model.reactions.get_by_id("ID_357").upper_bound = 0
@@ -826,7 +837,7 @@ dfba_consts = {k:v for k, v in config["dfba_constraints"].items() if k not in co
 for constraint, const_file in dfba_consts.items():
     lg_df = pd.read_csv(os.path.join(config["dfba_params"]["logistic_param_dir"], const_file))
     flip_sign = constraint.startswith("Ex_")  # flip sign for uptake constraints
-    flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=flip_sign, bound_scale=1.0)
+    flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=flip_sign, bound_scale=1.0, leak = 1e-6, leak_tol = 1e-4)
     # flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
     constraints[constraint] = MetaboliteConstraint(constraint, flux_fn)
 
@@ -1047,7 +1058,8 @@ def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.htm
     )
 
     fig.write_html(outname)
-    fig.show()
+    if display_plot:
+        fig.show()
 
 plot_raw_fluxes_html(flux_df, interesting_reactions, model=model, display_plot=False,
                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_all_{exp_name}.html'))

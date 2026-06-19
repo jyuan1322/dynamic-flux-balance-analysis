@@ -136,26 +136,18 @@ class dFBA:
 
             # Optionally perform FVA
             if self.fva:
-                # sanitize all reaction bounds before FVA
-                # for rxn in self.model.reactions:
-                #     if rxn.lower_bound > rxn.upper_bound:
-                #         rxn.lower_bound, rxn.upper_bound = rxn.upper_bound, rxn.lower_bound
-                #     if abs(rxn.upper_bound - rxn.lower_bound) < 1e-10:
-                #         rxn.upper_bound = rxn.lower_bound
-                # Check model feasibility before FVA
-                # test = self.model.slim_optimize()
-                # if test is None or np.isnan(test):
-                #     print(f"[t={t:.2f}] Model infeasible before FVA, skipping.")
-                #     for rxn_id in self.tracked_reactions:
-                #         self.fva_bounds[rxn_id]["min"].append(np.nan)
-                #         self.fva_bounds[rxn_id]["max"].append(np.nan)
-                #     continue
-                # fva_result = flux_variability_analysis(self.model, reaction_list=self.tracked_reactions)
                 fva_result = flux_variability_analysis(self.model, reaction_list = self.tracked_reactions, 
-                                                       fraction_of_optimum=0.999, loopless=False)
+                                                       fraction_of_optimum=0.995, loopless=False)
                 for rxn_id in self.tracked_reactions:
                     self.fva_bounds[rxn_id]["min"].append(fva_result.loc[rxn_id, "minimum"])
                     self.fva_bounds[rxn_id]["max"].append(fva_result.loc[rxn_id, "maximum"])
+
+            # inspect a stalled reaction
+            # rxn = model.reactions.get_by_id("ID_XXX")  # the stalling one
+            # print(rxn.lower_bound, rxn.upper_bound)
+            # with model:
+            #     sol = model.optimize()
+            #     print(sol.fluxes["ID_XXX"])
 
         print("dFBA simulation complete.")
 

@@ -1,0 +1,24 @@
+name: nmr
+channels:
+  - conda-forge
+dependencies:
+  - cxx-compiler
+  - graphviz
+  - lmfit
+  - make
+  - networkx
+  - openpyxl
+  - pandas
+  - pybaselines
+  - pygraphviz
+  - python
+  - pip:
+    - XlsxWriter==3.2.3
+    - cobra==0.29.1
+    - fastdtw==0.3.4
+    - matplotlib==3.10.3
+    - nicegui==2.20.0
+    - nmrglue==0.12.dev0
+    - plotly==6.2.0
+
+prefix: "/home/jy1008/.local/share/mamba/envs/nmr"

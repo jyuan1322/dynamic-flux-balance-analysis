@@ -1,0 +1,24 @@
+name: pystan-env
+channels:
+  - conda-forge
+dependencies:
+  - arviz
+  - cobra
+  - cxx-compiler
+  - cycler
+  - lmfit
+  - make
+  - matplotlib
+  - networkx
+  - numpy
+  - openpyxl
+  - pandas
+  - pip
+  - plotly
+  - pygraphviz
+  - python=3.11
+  - scipy
+  - pip:
+    - pystan==3.10.0
+
+prefix: "/home/jy1008/.local/share/mamba/envs/pystan-env"

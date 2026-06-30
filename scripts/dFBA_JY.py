@@ -1,9 +1,54 @@
 import cobra
 import numpy as np
 import pandas as pd
+import multiprocessing as mp
 from typing import Dict, List, Callable, Optional
 # fva
 from cobra.flux_analysis import flux_variability_analysis
+
+
+def _fva_worker(model, reaction_list, fraction_of_optimum, loopless, queue):
+    """
+    Runs in a forked child process. Inherits the parent's model via
+    copy-on-write (Linux fork), so no pickling of the cobra.Model is needed.
+    """
+    try:
+        result = flux_variability_analysis(
+            model, reaction_list=reaction_list,
+            fraction_of_optimum=fraction_of_optimum, loopless=loopless
+        )
+        queue.put(("ok", result))
+    except Exception as e:
+        queue.put(("error", str(e)))
+
+
+def run_fva_with_hard_timeout(model, reaction_list, fraction_of_optimum=0.995,
+                               loopless=False, timeout=15):
+    """
+    Runs flux_variability_analysis in a forked subprocess and hard-kills it
+    if it exceeds `timeout` seconds. Necessary because a stalled GLPK simplex
+    call is stuck in C code and won't respond to SIGALRM/SIGINT.
+    Returns (result_df_or_None, error_str_or_None). error_str is "timeout"
+    if it stalled, otherwise the exception message, or None on success.
+    """
+    ctx = mp.get_context("fork")  # Linux-only; fine on erishpc
+    queue = ctx.Queue()
+    p = ctx.Process(target=_fva_worker, args=(model, reaction_list, fraction_of_optimum, loopless, queue))
+    p.start()
+    p.join(timeout)
+
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        return None, "timeout"
+
+    if not queue.empty():
+        status, payload = queue.get()
+        if status == "ok":
+            return payload, None
+        else:
+            return None, payload
+    return None, "unknown failure"
 
 
 class MetaboliteConstraint:
@@ -15,8 +60,6 @@ class MetaboliteConstraint:
         self.met_id = met_id  # e.g., 'glc'
         self.constraint_fn = constraint_fn  # e.g., lambda t: (-10, 0)
 
-    # def get_bounds(self, time: float):
-    #     return self.constraint_fn(time)
     def get_bounds(self, time: float):
         lb, ub = self.constraint_fn(time)
         if lb > ub:
@@ -34,7 +77,9 @@ class dFBA:
         steps_per_hour: int = 1,
         fba_method: Callable = cobra.flux_analysis.pfba,
         fva: bool = False,
-        tracked_reactions: Optional[List[str]] = None
+        tracked_reactions: Optional[List[str]] = None,
+        fva_exclude: Optional[List[str]] = None,
+        fva_timeout: int = 15,
     ):
         self.model = model
         self.objective = objective
@@ -43,6 +88,8 @@ class dFBA:
         self.fba_method = fba_method
         self.fva = fva
         self.tracked_reactions = tracked_reactions or []
+        self.fva_exclude = set(fva_exclude or [])
+        self.fva_timeout = fva_timeout
 
         # track all nonzero fluxes
         self.all_fluxes = {}  # time -> full flux Series
@@ -58,34 +105,22 @@ class dFBA:
         This modifies the model's exchange bounds directly.
         """
         for met_id, constraint in self.constraints.items():
-            # print(f"[t={t:.2f}] Applying constraint for {met_id}")
             lb, ub = constraint.get_bounds(t)
-
-            # guard against floating point precision issues
-            # lb, ub = min(lb, ub), max(lb, ub)
-            # if abs(ub - lb) < 1e-10:
-            #     ub = lb
-
-            # print(f"[DEBUG] At time {t:.2f}, constraint returned: lb={lb}, ub={ub}")
-
-            # exch_rxn_id = f"Ex_{met_id}"  # Assumes BiGG-style naming
-            exch_rxn_id = f"{met_id}"  # Assumes BiGG-style naming
+            exch_rxn_id = f"{met_id}"
             if exch_rxn_id in self.model.reactions:
                 rxn = self.model.reactions.get_by_id(exch_rxn_id)
 
-                # temporary debug for Ex_glc
                 if exch_rxn_id == "Ex_glc":
                     print(f"[DEBUG Ex_glc] t={t:.2f} get_bounds=({lb:.6f},{ub:.6f}) model=({rxn.lower_bound:.6f},{rxn.upper_bound:.6f})")
 
-
                 # Update upper bound before lower bound to avoid conflict
                 if ub < rxn.lower_bound:
-                    rxn.lower_bound = lb  # safe since lb <= ub
+                    rxn.lower_bound = lb
                     rxn.upper_bound = ub
                 else:
                     rxn.upper_bound = ub
                     rxn.lower_bound = lb
-                    
+
                 print(f"[t={t:.2f}] {rxn} bounds set to ({lb}, {ub})")
             else:
                 print(f"[WARN] Exchange reaction {exch_rxn_id} not found in model.")
@@ -100,72 +135,59 @@ class dFBA:
             self.apply_constraints(t)
             sol = self.fba_method(self.model)
 
-            # # Check feasibility before FVA
-            # if sol.status != "optimal":
-            #     print(f"[t={t:.2f}] Infeasible! Testing combinations...")
-            #     
-            #     # Test 1: zero ALL Sec_ lower bounds together
-            #     with self.model:
-            #         for skip_rxn in self.constraints:
-            #             if skip_rxn.startswith("Sec_"):
-            #                 self.model.reactions.get_by_id(skip_rxn).lower_bound = 0
-            #         test_sol = self.fba_method(self.model)
-            #         print(f"  Zeroing ALL Sec_ lbs → {test_sol.status}")
-
-            #     # Test 2: zero all Ex_ lower bounds together
-            #     with self.model:
-            #         for skip_rxn in self.constraints:
-            #             if skip_rxn.startswith("Ex_"):
-            #                 self.model.reactions.get_by_id(skip_rxn).lower_bound = 0
-            #         test_sol = self.fba_method(self.model)
-            #         print(f"  Zeroing ALL Ex_ lbs → {test_sol.status}")
-
-            #     # Test 3: zero everything
-            #     with self.model:
-            #         for skip_rxn in self.constraints:
-            #             self.model.reactions.get_by_id(skip_rxn).lower_bound = 0
-            #         test_sol = self.fba_method(self.model)
-            #         print(f"  Zeroing ALL lbs → {test_sol.status}")
-            #     break
-
             # Save tracked reaction fluxes
             for rxn_id in self.tracked_reactions:
                 self.solution_fluxes.at[t, rxn_id] = sol.fluxes.get(rxn_id, np.nan)
-            
+
             self.all_fluxes[t] = sol.fluxes.copy()
 
             # Optionally perform FVA
             if self.fva:
-                fva_result = flux_variability_analysis(self.model, reaction_list = self.tracked_reactions, 
-                                                       fraction_of_optimum=0.995, loopless=False)
-                for rxn_id in self.tracked_reactions:
-                    self.fva_bounds[rxn_id]["min"].append(fva_result.loc[rxn_id, "minimum"])
-                    self.fva_bounds[rxn_id]["max"].append(fva_result.loc[rxn_id, "maximum"])
+                fva_reactions = [r for r in self.tracked_reactions if r not in self.fva_exclude]
 
-            # inspect a stalled reaction
-            # rxn = model.reactions.get_by_id("ID_XXX")  # the stalling one
-            # print(rxn.lower_bound, rxn.upper_bound)
-            # with model:
-            #     sol = model.optimize()
-            #     print(sol.fluxes["ID_XXX"])
+                fva_result, err = run_fva_with_hard_timeout(
+                    self.model, fva_reactions,
+                    fraction_of_optimum=0.995, loopless=False,
+                    timeout=self.fva_timeout
+                )
+                if err == "timeout":
+                    print(f"[t={t:.2f}] FVA stalled (> {self.fva_timeout}s), filling NaN for this step.")
+                elif err is not None:
+                    print(f"[t={t:.2f}] FVA failed: {err}, filling NaN for this step.")
+
+                for rxn_id in self.tracked_reactions:
+                    if fva_result is None or rxn_id in self.fva_exclude:
+                        self.fva_bounds[rxn_id]["min"].append(np.nan)
+                        self.fva_bounds[rxn_id]["max"].append(np.nan)
+                    else:
+                        self.fva_bounds[rxn_id]["min"].append(fva_result.loc[rxn_id, "minimum"])
+                        self.fva_bounds[rxn_id]["max"].append(fva_result.loc[rxn_id, "maximum"])
 
         print("dFBA simulation complete.")
 
-    # def export_results(self, prefix="dfba_output"):
-    #     """
-    #     Writes results to disk.
-    #     """
-    #     self.solution_fluxes.to_csv(f"{prefix}_fluxes.csv")
-    #     if self.fva:
-    #         # Save FVA min/max as DataFrames
-    #         pd.DataFrame({
-    #             rxn: self.fva_bounds[rxn]["min"] for rxn in self.tracked_reactions
-    #         }, index=self.timecourse).to_csv(f"{prefix}_fva_min.csv")
-    #         pd.DataFrame({
-    #             rxn: self.fva_bounds[rxn]["max"] for rxn in self.tracked_reactions
-    #         }, index=self.timecourse).to_csv(f"{prefix}_fva_max.csv")
+    def diagnose_fva_stalls(self, t: float, per_rxn_timeout: int = 15):
+        """
+        One-off diagnostic: applies constraints for time t, then runs FVA on
+        tracked_reactions one at a time (each in its own forked subprocess
+        with a hard timeout) to find which reaction(s) stall.
+        Call this manually (not inside run()) when you suspect a stall.
+        """
+        self.apply_constraints(t)
+        self.fba_method(self.model)  # warm solve, mirrors run()
 
-    # Updated export_results to drop NaN rows (e.g., from infeasible time points) and ensure FVA indices match completed time points.
+        for rxn_id in self.tracked_reactions:
+            result, err = run_fva_with_hard_timeout(
+                self.model, [rxn_id],
+                fraction_of_optimum=0.995, loopless=False,
+                timeout=per_rxn_timeout
+            )
+            if err == "timeout":
+                print(f"{rxn_id}: STALLED (> {per_rxn_timeout}s)")
+            elif err is not None:
+                print(f"{rxn_id}: failed -> {err}")
+            else:
+                print(f"{rxn_id}: -> {result.values.tolist()}")
+
     def export_results(self, prefix="dfba_output"):
         self.solution_fluxes.dropna(how='all').to_csv(f"{prefix}_fluxes.csv")
         if self.fva:
@@ -176,4 +198,3 @@ class dFBA:
             pd.DataFrame({
                 rxn: self.fva_bounds[rxn]["max"] for rxn in self.tracked_reactions
             }, index=completed_times).to_csv(f"{prefix}_fva_max.csv")
-

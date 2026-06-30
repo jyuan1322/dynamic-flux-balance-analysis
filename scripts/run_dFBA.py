@@ -798,30 +798,24 @@ amino_rxns = []
 #     if (rxn.id in amino_rxns): # bounds=(0.0, 4.13)
 #         rxn.upper_bound *= 0.03
 
+
 for rxn in model.reactions:
+    """
     if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
         rxn.upper_bound *= 0.03
-        # rxn.upper_bound = 0.03
     if rxn.id in ['Ex_valL', 'Ex_ileL']:
         rxn.upper_bound *= 0.03
-        # rxn.lower_bound = 0
+    """
     # May28 no butyrate?
-    # if rxn.id in ['Sec_but']:
-    #     rxn.upper_bound = 0
+    if rxn.id in ['Sec_but']:
+        rxn.upper_bound = 0
 
-model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
-model.reactions.Ex_cysL.upper_bound = 1000
+
+# model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
+# model.reactions.Ex_cysL.upper_bound = 1000
+model.reactions.ID_90.upper_bound = 1000
+model.reactions.ID_90.lower_bound = -1000
 model.solver = 'glpk'
-
-# to debug alanine transaminase
-# model.reactions.get_by_id("ID_357").upper_bound = 0
-# model.reactions.get_by_id("ID_357").lower_bound = 0
-# model.reactions.get_by_id("ID_506").upper_bound = 0
-# model.reactions.get_by_id("ID_506").lower_bound = 0
-# model.reactions.get_by_id("ID_glyamintrans").upper_bound = 0
-# model.reactions.get_by_id("ID_glyamintrans").lower_bound = 0
-# model.reactions.get_by_id("Trans_alaL_PMF").upper_bound = 0
-# model.reactions.get_by_id("Trans_alaL_PMF").lower_bound = 0
 
 # ── PRINT AIDAN'S BOUNDS ─────────────────────────────────────────────────────
 print("Bounds after Aidan's block:")
@@ -848,7 +842,7 @@ for rxn_id, constraint in constraints.items():
         print(f"  t={t}: lb={lb:.4f}, ub={ub:.4f}")
 
 
-"""
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Plot bounds of all constraint metabolites for debugging
 # ─────────────────────────────────────────────────────────────────────────────
@@ -857,7 +851,7 @@ t_plot = np.linspace(
     float(time_range.split(",")[1].strip()),
     300
 )
-
+"""
 pdf_out = os.path.join(config["dfba_params"]["output_dir"], "constraint_bounds.pdf")
 with PdfPages(pdf_out) as pdf:
     for rxn_id, constraint in constraints.items():
@@ -883,6 +877,63 @@ with PdfPages(pdf_out) as pdf:
 print(f"Constraint bounds saved to {pdf_out}")
 """
 
+# print Aidan's bounds
+import glob
+import matplotlib.cm as cm
+# the version on Github
+# csv_dir = "/data/local/jy1008/MA-host-microbiome/nmr-cdiff/scripts/process/dfba_output_bounds_JY"
+# pdf_out = os.path.join(config["dfba_params"]["output_dir"], "constraint_bounds_Aidan_Github.pdf")
+# version shared by Aidan
+csv_dir = "/data/local/jy1008/MA-host-microbiome/nmr-cdiff/scripts/process/dfba_output_bounds_JY_v2"
+pdf_out = os.path.join(config["dfba_params"]["output_dir"], "constraint_bounds_Aidan_Acetate13C.pdf")
+
+if not os.path.exists(pdf_out):
+    csv_files = sorted(glob.glob(os.path.join(csv_dir, "*.csv")))
+    cmap = cm.get_cmap("tab20", len(csv_files))  # up to 20 distinct colors
+
+    with PdfPages(pdf_out) as pdf:
+        for csv_path in csv_files:
+            rxn_id = os.path.splitext(os.path.basename(csv_path))[0].removeprefix("bounds_")
+            df = pd.read_csv(csv_path)
+
+            t_plot = df["time"]
+            lbs = df["lower"]
+            ubs = df["upper"]
+
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.plot(t_plot, lbs, label="lb", color="blue")
+            ax.plot(t_plot, ubs, label="ub", color="red")
+            ax.fill_between(t_plot, lbs, ubs, alpha=0.2)
+            ax.axhline(0, color="k", linewidth=0.5, linestyle="--")
+            ax.set_title(rxn_id)
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Flux bound")
+            ax.legend()
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+
+        # Summary page: all upper bounds overlaid, excluding Ex_glc
+        fig, ax = plt.subplots(figsize=(8, 6))
+        for i, csv_path in enumerate(csv_files):
+            rxn_id = os.path.splitext(os.path.basename(csv_path))[0].removeprefix("bounds_")
+            print(rxn_id)
+            if rxn_id in ["Ex_glc", "Ex_leuL"]:
+                continue
+            df = pd.read_csv(csv_path)
+            ax.plot(df["time"], df["upper"], label=rxn_id, linewidth=1, color=cmap(i))
+
+        ax.axhline(0, color="k", linewidth=0.5, linestyle="--")
+        ax.set_title("All Upper Bounds (excluding Ex_glc, Ex_leuL)")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Flux bound")
+        ax.legend(fontsize=6, loc="upper right", ncol=2)
+        plt.tight_layout()
+        pdf.savefig(fig)
+        plt.close()
+
+    exit()
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 
@@ -892,12 +943,6 @@ tracked_reactions = [
     if x.strip()
 ]
 
-
-"""
-with open("ATP_sink_reactions_list.txt", "r") as f:
-    tracked_reactions = [line.strip() for line in f]
-print(tracked_reactions)
-"""
 
 # # Test each constraint in isolation
 # # ── DIAGNOSTIC ──────────────────────────────────────────────────────────────
@@ -1006,7 +1051,7 @@ def is_interesting_flux(series, min_peak=0.5, min_range=0.5):
 
 interesting_reactions = [
     rxn for rxn in flux_df.columns
-    if is_interesting_flux(flux_df[rxn], min_peak=0.5, min_range=0.25)
+    if is_interesting_flux(flux_df[rxn], min_peak=0.05, min_range=0.25)
 ]
 
 # bounding_reactions = ["Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"]
@@ -1061,14 +1106,25 @@ def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.htm
     if display_plot:
         fig.show()
 
+# plot_raw_fluxes_html(flux_df, interesting_reactions, model=model, display_plot=False,
+#                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_all_{exp_name}.html'))
+# plot_raw_fluxes_html(flux_df, bounding_reactions, model=model, display_plot=False,
+#                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_bounding_{exp_name}.html'))
+# plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, model=model, display_plot=False,
+#                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_gt2_{exp_name}.html'))
+# plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model, display_plot=False,
+#                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_lt2_{exp_name}.html'))
+# Interesting reactions are the figure reactions and input constraints
+interesting_reactions_vis = ["ID_469", "ID_366", "ID_146", "ID_321", "ID_233", "ID_53", "ID_280",
+                         "HydEB", "ICCoA-DHG-EB", "ID_314", "ID_383", "BUK", "ID_326", 
+                         "ATPsynth4_1", "RNF-Complex", "ID_336", "ID_575",
+                         "Ex_glc", "Sec_ac", "Sec_alaL", "Sec_eto", "Sec_for", "Sec_lacS",
+                         "Ex_proL", "Ex_leuL", "Ex_ileL", "Sec_isobuta", "Sec_isocap", "Sec_ival", "Sec_ppa"]
+plot_raw_fluxes_html(flux_df, interesting_reactions_vis, model=model, display_plot=False,
+                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_subset_{exp_name}.html'))
+# Also plot all reactions
 plot_raw_fluxes_html(flux_df, interesting_reactions, model=model, display_plot=False,
                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_all_{exp_name}.html'))
-plot_raw_fluxes_html(flux_df, bounding_reactions, model=model, display_plot=False,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_bounding_{exp_name}.html'))
-plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, model=model, display_plot=False,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_gt2_{exp_name}.html'))
-plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model, display_plot=False,
-                     outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_lt2_{exp_name}.html'))
 
 flux_df.to_csv(os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv'))
 
@@ -1107,6 +1163,18 @@ panels = {
         "flip": [],
         "colors": ["#f542ef", "#4ef542", "#cbf542", "#257d56"]
     },
+    "panel_b2": {
+        "rxns": ["ID_469"],
+        "labels": ["cystathionine"],
+        "flip": [],
+        "colors": ["#f542ef", "#4ef542", "#cbf542", "#257d56"]
+    },
+    "panel_b3": {
+        "rxns": ["ID_146"],
+        "labels": ["2-methylbutyrate kinase"],
+        "flip": [],
+        "colors": ["#f542ef", "#4ef542", "#cbf542", "#257d56"]
+    },
     "panel_c": {
         "rxns": ["ID_233", "ID_53", "ID_280"],
         "labels": ["PGK", "PFOR", "acetate kinase"],
@@ -1121,7 +1189,7 @@ panels = {
     },
     "panel_e": {
         "rxns": ["ICCoA-DHG-EB", "ID_314"],
-        "labels": ["icocaprenoyl-CoA reductase", "Proline reductase"],
+        "labels": ["isocaprenoyl-CoA reductase", "Proline reductase"],
         "flip": [],
         "colors": ["#f505e9", "#a3051a"]
     },

@@ -8,6 +8,8 @@ from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 from scipy import integrate
 
+from cobra.flux_analysis import find_blocked_reactions, flux_variability_analysis
+
 def print_rxns(model, metab, role="all"):
     rxn_list = []
     # match string to metabolites
@@ -259,3 +261,39 @@ def plot_raw_fluxes(df, reactions, outname="dfba_flux", model=None, plot_bounds=
     plt.subplots_adjust(right=0.5)
     # plt.show()
     plt.savefig(f"{outname}.pdf", dpi=300, bbox_inches="tight")
+
+
+
+
+def show_connected_reactions(model, rxn_id, depth=1):
+    """
+    Print reactions that share metabolites with rxn_id, i.e. reactions that
+    could feed it substrate or consume its product.
+    depth=1 just shows direct neighbors; depth=2 also expands those.
+    """
+    rxn = model.reactions.get_by_id(rxn_id)
+    print(f"=== {rxn_id}: {rxn.name} ===")
+    print(f"  {rxn.reaction}")
+    print(f"  bounds=({rxn.lower_bound}, {rxn.upper_bound})\n")
+
+    seen = {rxn_id}
+    frontier = [rxn]
+
+    for d in range(depth):
+        next_frontier = []
+        for r in frontier:
+            for met in r.metabolites:
+                coeff = r.metabolites[met]
+                role = "reactant" if coeff < 0 else "product"
+                print(f"--- {met.id} (as {role} of {r.id}, coeff={coeff}) ---")
+                for other in met.reactions:
+                    if other.id in seen:
+                        continue
+                    other_coeff = other.metabolites[met]
+                    other_role = "produces" if other_coeff > 0 else "consumes"
+                    print(f"    {other.id} ({other_role} {met.id}, "
+                          f"bounds=({other.lower_bound},{other.upper_bound})): {other.reaction}")
+                    next_frontier.append(other)
+                    seen.add(other.id)
+        frontier = next_frontier
+        print()

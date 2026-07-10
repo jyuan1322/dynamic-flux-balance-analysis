@@ -110,8 +110,8 @@ class dFBA:
             if exch_rxn_id in self.model.reactions:
                 rxn = self.model.reactions.get_by_id(exch_rxn_id)
 
-                if exch_rxn_id == "Ex_glc":
-                    print(f"[DEBUG Ex_glc] t={t:.2f} get_bounds=({lb:.6f},{ub:.6f}) model=({rxn.lower_bound:.6f},{rxn.upper_bound:.6f})")
+                # if exch_rxn_id == "Ex_glc":
+                #     print(f"[DEBUG Ex_glc] t={t:.2f} get_bounds=({lb:.6f},{ub:.6f}) model=({rxn.lower_bound:.6f},{rxn.upper_bound:.6f})")
 
                 # Update upper bound before lower bound to avoid conflict
                 if ub < rxn.lower_bound:
@@ -145,6 +145,7 @@ class dFBA:
             if self.fva:
                 fva_reactions = [r for r in self.tracked_reactions if r not in self.fva_exclude]
 
+                # fraction_of_optimum=0.995, but set this low for debug
                 fva_result, err = run_fva_with_hard_timeout(
                     self.model, fva_reactions,
                     fraction_of_optimum=0.995, loopless=False,

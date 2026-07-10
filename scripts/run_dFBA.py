@@ -813,8 +813,20 @@ for rxn in model.reactions:
 
 # model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
 # model.reactions.Ex_cysL.upper_bound = 1000
-model.reactions.ID_90.upper_bound = 1000
-model.reactions.ID_90.lower_bound = -1000
+# model.reactions.ID_90.upper_bound = 100
+# model.reactions.ID_90.lower_bound = -100
+# model.reactions.ID_508.upper_bound = 100
+# model.reactions.ID_508.lower_bound = -100
+# model.reactions.Trans_h.upper_bound = 100
+# model.reactions.Trans_h.lower_bound = -100
+# model.reactions.ID_247.upper_bound = 100
+# model.reactions.ID_247.lower_bound = -100
+model.reactions.Sec_leuL.upper_bound = 100
+model.reactions.Sec_leuL.lower_bound = -100
+model.reactions.Sec_proL.upper_bound = 100
+model.reactions.Sec_proL.lower_bound = -100
+
+
 model.solver = 'glpk'
 
 # ── PRINT AIDAN'S BOUNDS ─────────────────────────────────────────────────────
@@ -1117,7 +1129,7 @@ def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.htm
 # Interesting reactions are the figure reactions and input constraints
 interesting_reactions_vis = ["ID_469", "ID_366", "ID_146", "ID_321", "ID_233", "ID_53", "ID_280",
                          "HydEB", "ICCoA-DHG-EB", "ID_314", "ID_383", "BUK", "ID_326", 
-                         "ATPsynth4_1", "RNF-Complex", "ID_336", "ID_575",
+                         "ATPsynth4_1", "RNF-Complex", "ID_336", "ID_575", "ID_90",
                          "Ex_glc", "Sec_ac", "Sec_alaL", "Sec_eto", "Sec_for", "Sec_lacS",
                          "Ex_proL", "Ex_leuL", "Ex_ileL", "Sec_isobuta", "Sec_isocap", "Sec_ival", "Sec_ppa"]
 plot_raw_fluxes_html(flux_df, interesting_reactions_vis, model=model, display_plot=False,
@@ -1156,6 +1168,18 @@ dmax = dmax.rename(columns={"Unnamed: 0": "Time"})
 
 # Define multiple panels (each will become one PDF page)
 panels = {
+    "panel_a1": {
+        "rxns": ["ID_90"],
+        "labels": ["formate hydrogenase"],
+        "flip": [],
+        "colors": ["#f542ef"]
+    },
+    "panel_a2": {
+        "rxns": ["Sec_leuL", "Sec_proL"],
+        "labels": ["secretion leucine", "secretion proline"],
+        "flip": [],
+        "colors": ["#f542ef", "#4ef542"]
+    },
     "panel_b": {
         "rxns": ["ID_469", "ID_366", "ID_146", "ID_321"],
         "labels": ["cystathionine", "isovalerate kinase",
@@ -1220,51 +1244,56 @@ panels = {
 }
 
 # Create multipage PDF
+def plot_interesting_rxns_panels(panels, dfall, dfmin, dmax, pdf_out, clip_bounds=True):
+    with PdfPages(pdf_out) as pdf:
+        for panel_name, panel_data in panels.items():
+            rxns = panel_data["rxns"]
+            labels = panel_data["labels"]
+            rxn_dict = dict(zip(rxns, labels))
+
+            plt.figure(figsize=(8, 4))
+
+            for rxn, color in zip(rxns, panel_data.get("colors", [None] * len(rxns))):
+                flip = -1 if rxn in panel_data.get("flip", []) else 1
+
+                optimal = flip * dfall[rxn]
+                fva_min = flip * dfmin[rxn]
+                fva_max = flip * dmax[rxn]
+
+                fva_lower = fva_min.combine(fva_max, min)
+                fva_upper = fva_min.combine(fva_max, max)
+
+                if clip_bounds:
+                    opt_min = optimal.min()
+                    opt_max = optimal.max()
+                    lower_clip = opt_min * 1.05 if opt_min < 0 else opt_min / 1.05
+                    upper_clip = opt_max * 1.05 if opt_max > 0 else opt_max / 1.05
+
+                    fva_lower = fva_lower.clip(lower=lower_clip)
+                    fva_upper = fva_upper.clip(upper=upper_clip)
+
+                line, = plt.plot(dfall["Time"], optimal, label=rxn_dict[rxn], color=color)
+                if rxn in dfmin.columns and rxn in dmax.columns:
+                    plt.fill_between(
+                        dfall["Time"],
+                        fva_lower,
+                        fva_upper,
+                        color=line.get_color(),
+                        alpha=0.2
+                    )
+
+            plt.xlabel("Time")
+            plt.ylabel("Flux value")
+            plt.title(panel_name)
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+
+            pdf.savefig()
+            plt.close()
+
 pdf_out = os.path.join(config["dfba_params"]["output_dir"], f'interesting_rxns_all_panels_{exp_name}.pdf')
-with PdfPages(pdf_out) as pdf:
-    for panel_name, panel_data in panels.items():
-        rxns = panel_data["rxns"]
-        labels = panel_data["labels"]
-        rxn_dict = dict(zip(rxns, labels))
-
-        plt.figure(figsize=(8, 4))
-
-        for rxn, color in zip(rxns, panel_data.get("colors", [None] * len(rxns))):
-            flip = -1 if rxn in panel_data.get("flip", []) else 1
-            
-            optimal = flip * dfall[rxn]
-            fva_min = flip * dfmin[rxn]
-            fva_max = flip * dmax[rxn]
-            
-            fva_lower = fva_min.combine(fva_max, min)
-            fva_upper = fva_min.combine(fva_max, max)
-            
-            opt_min = optimal.min()
-            opt_max = optimal.max()
-            lower_clip = opt_min * 1.05 if opt_min < 0 else opt_min / 1.05
-            upper_clip = opt_max * 1.05 if opt_max > 0 else opt_max / 1.05
-            
-            fva_lower = fva_lower.clip(lower=lower_clip)
-            fva_upper = fva_upper.clip(upper=upper_clip)
-            
-            line, = plt.plot(dfall["Time"], optimal, label=rxn_dict[rxn], color=color)
-            if rxn in dfmin.columns and rxn in dmax.columns:
-                plt.fill_between(
-                    dfall["Time"],
-                    fva_lower,
-                    fva_upper,
-                    color=line.get_color(),
-                    alpha=0.2
-                )
-
-        plt.xlabel("Time")
-        plt.ylabel("Flux value")
-        plt.title(panel_name)
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-
-        pdf.savefig()
-        plt.close()
-
+plot_interesting_rxns_panels(panels, dfall, dfmin, dmax, pdf_out, clip_bounds=False)
+pdf_out_clip = os.path.join(config["dfba_params"]["output_dir"], f'interesting_rxns_all_panels_{exp_name}_clip.pdf')
+plot_interesting_rxns_panels(panels, dfall, dfmin, dmax, pdf_out_clip, clip_bounds=True)
 print("Saved multi-page PDF: interesting_rxns_all_panels.pdf")

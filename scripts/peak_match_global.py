@@ -1,7 +1,10 @@
-import os, json
+import sys, os, json
 import pandas as pd
 import numpy as np
 import configparser
+import matplotlib
+if sys.platform == "darwin":
+    matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors

@@ -1,4 +1,4 @@
-import os, pickle
+import sys, os, pickle
 import cobra as cb
 import networkx as nx
 import numpy as np
@@ -10,6 +10,9 @@ from scipy.stats import norm, spearmanr
 from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import gaussian_filter1d
 from scipy.special import expit
+import matplotlib
+if sys.platform == "darwin":
+    matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from networkx.algorithms.traversal.depth_first_search import dfs_tree

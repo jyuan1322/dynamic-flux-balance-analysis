@@ -1,4 +1,4 @@
-import json
+import sys, json
 import configparser
 import os, pickle
 import cobra as cb
@@ -11,6 +11,9 @@ from scipy.stats import norm, spearmanr
 from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import gaussian_filter1d
 from scipy.special import expit
+import matplotlib as mpl
+if sys.platform == "darwin":
+    mpl.use("TkAgg")
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.backends.backend_pdf import PdfPages
@@ -405,28 +408,14 @@ def plot_logistic_fit2(ax1, logistic_df, corrected_times, scaled_concs, target_c
     logistic_pred_df = pd.DataFrame(dict(zip(logistic_pred_cols, logistic_pred_lists)))
     return logistic_pred_df
 
-# metabolites = ["Formate", "Isobutyrate", "Isoleucine", "Valine"]
-# metabolites = df_grouped.columns[1:].to_list()
-# metabolites = [col for col in df_grouped.columns if col not in ("Time", "Samplecode")]
-# colors = cm.get_cmap("tab10", len(metabolites))
-colors = cm.get_cmap("tab20", len(metabolites))
-
 # Get the colormap object with the specified number of colors
-import matplotlib as mpl
 cmap = mpl.colormaps['tab20'].resampled(len(metabolites))
-
-# Access the list of colors from the colormap object
 colors = cmap.colors
 # revert to default colors
 # colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
-# colors = ["darkorange", "royalblue", "green", "purple"]
-# fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
 fig, ax1 = plt.subplots(1, 1, figsize=(10, 8), sharex=True)
-# metabs_a = ["Isocaproate", "13C_Acetate", "13C_Alanine2", "13C_Ethanol", "13C_Butyrate",
-#             "5-aminovalerate", "Arginine", "Leucine"]
-# metabs_b = list(set(metabolites) - set(metabs_a))
-# for i, target_col in enumerate(metabs_b):
+
 all_logistic_preds = None
 logistic_params = []
 logistic_df_dict = {}

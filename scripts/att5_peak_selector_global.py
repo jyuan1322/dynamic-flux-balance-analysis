@@ -1,10 +1,17 @@
+import sys
 import numpy as np
+import matplotlib
+if sys.platform == "darwin":
+    matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, TextBox
 from lmfit import Parameters, minimize
 from lmfit.models import LorentzianModel
 from scipy.signal import find_peaks
 
+# for compatibility across numpy versions
+if not hasattr(np, "trapz"):
+    np.trapz = np.trapezoid
 
 # ---------------------------------------------------------------------------
 # Standalone model helpers

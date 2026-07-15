@@ -33,33 +33,55 @@ config.read("config/config_UGA_HRMAS_13C_Cells_1H_standard.ini")
 # config.read("config/config_UGA_HRMAS_13C_Cells_temp_glc_only.ini")
 
 # METABOLITE_GROUPS = {
-#     "Set 1": ["13C_Glucose", "13C_Acetate", "13C_Ethanol"],
-#     "Set 2": ["13C_CO2", "13C_Lactate", "13C_Alanine"],
-#     # "Set 3": ["13C_Glucose", "13C_Ethanol", "13C_Butyrate"],
+#     "Set 1": ["NT_Proline", "NT_5-aminovalerate"],
+#     "Set 2": ["13C_Glucose", "13C_Acetate", "13C_Ethanol", "13C_Alanine", "13C_Lactate", "13C_Pyruvate", "13C_Formate"],
+#     "Set 3": ["NT_Leucine", "NT_Isocaproate", "NT_Isovalerate"],
+#     "Set 4": ["NT_Glycine", "NT_Acetate", "NT_Ethanol"],
+#     "Set 5": ["NT_Threonine", "NT_Propionate"],
+#     "Set 6": ["NT_Valine", "NT_Isobutyrate"],
+#     "Set 7": ["NT_Isoleucine"],
+#     "Set 8": ["NT_Arginine", "NT_Histidine", "NT_Tryptophan"],
+#     "Set 9": ["NT_Methionine", "NT_Formate", "NT_Pyruvate"],
 # }
-# METABOLITE_GROUPS = {
-#     "Set 1": ["NT_Proline", "NT_5-aminovalerate", "DSS"],
-#     "Set 2": ["NT_Butyrate", "NT_Isobutyrate", "13C_Acetate", "NT_Acetate"],
-#     "Set 3": ["NT_Leucine", "NT_Isoleucine", "NT_Isovalerate"],
-#     "Set 4": ["13C_Lactate", "13C_Pyruvate", "NT_Pyruvate"],
-#     "Set 5": ["NT_Isocaproate", "13C_Formate", "NT_Formate"],
-#     "Set 6": ["13C_Glucose", "Glucose", "13C_Alanine", "13C_Ethanol", "NT_Ethanol"],
-#     "Set 7": ["NT_Arginine", "NT_Histidine", "NT_Methionine", "NT_Proprionate"],
-#     "Set 8": ["NT_Threonine", "NT_Tryptophan", "NT_Valine", "NT_Glycine"],
-# }
-
 METABOLITE_GROUPS = {
     "Set 1": ["NT_Proline", "NT_5-aminovalerate"],
-    "Set 2": ["13C_Glucose", "13C_Acetate", "13C_Ethanol", "13C_Alanine", "13C_Lactate", "13C_Pyruvate", "13C_Formate"],
-    "Set 3": ["NT_Leucine", "NT_Isocaproate", "NT_Isovalerate"],
-    "Set 4": ["NT_Glycine", "NT_Acetate", "NT_Ethanol"],
+    "Set 2": ["NT_Leucine", "NT_Isovalerate", "NT_Isocaproate"],
+    "Set 3": ["13C_Formate", "13C_Glucose", "13C_Pyruvate", "13C_Acetate", "13C_Alanine", "13C_Ethanol", "13C_Lactate"],
+    "Set 6": ["NT_Isobutyrate", "NT_Valine"],
     "Set 5": ["NT_Threonine", "NT_Propionate"],
-    "Set 6": ["NT_Valine", "NT_Isobutyrate"],
-    "Set 7": ["NT_Isoleucine"],
-    "Set 8": ["NT_Arginine", "NT_Histidine", "NT_Tryptophan"],
-    "Set 9": ["NT_Methionine", "NT_Formate", "NT_Pyruvate"],
+    "Set 4": ["NT_Glycine", "NT_Acetate", "NT_Ethanol"],
+    "Set 7": ["NT_Formate"],
+    "Set 7": ["NT_Pyruvate"],
+    "Set 9": ["NT_Methionine", "NT_Threonine", "NT_Propionate"],
 }
-
+METABOLITE_COLORS = {
+    "NT_Proline":          "#000080",
+    "NT_5-aminovalerate":  "#8E0041",
+    "NT_Leucine":          "#008080",
+    "NT_Isovalerate":      "#4BDF2E",
+    "NT_Isocaproate":      "#FF7674",
+    "13C_Formate":         "#F78B3B",
+    "13C_Glucose":         "#372FCA",
+    "13C_Pyruvate":        "#F788FF",
+    "13C_Acetate":         "#F5195A",
+    "13C_Alanine":         "#60A5FF",
+    "13C_Ethanol":         "#46B20F",
+    "13C_Lactate":         "#A23E00",
+    "NT_Isobutyrate":      "#FF5722",
+    "NT_Valine":           "#D500F9",
+    "NT_Threonine":        "#8E24AA",
+    "NT_Propionate":       "#00BCD4",
+    "NT_Glycine":          "#2E7D32",
+    "NT_Acetate":          "#D81B60",
+    "NT_Ethanol":          "#FFA000",
+    "NT_Formate":          "#0D7359",
+    "NT_Pyruvate":         "#1565C0",
+    "NT_Methionine":       "#B8860B",
+    "NT_Isoleucine":       "#9edae5",
+    "NT_Arginine":         "#393b79",
+    "NT_Histidine":        "#637939",
+    "NT_Tryptophan":       "#8c6d31",
+}
 
 
 input_dir = config['trajectories']['input_dir']
@@ -212,7 +234,7 @@ data {
 }
 parameters {
     real A;                        // baseline level
-    real amp1;                     // first transition amplitude (unconstrained, unshrunk)
+    real<lower=0> amp1;                     // first transition amplitude (unconstrained, unshrunk)
     real amp2_raw;
     real<lower=0.001> lambda2;     // local shrinkage scale
     real C1;
@@ -585,10 +607,11 @@ with PdfPages(pdf_out) as pdf:
             continue
         fig, ax1 = plt.subplots(1, 1, figsize=(5, 4))
         for target_col in group_metabolites:
-            line, = ax1.plot(all_logistic_preds_concs[f"{target_col}_times"],
+            color = METABOLITE_COLORS.get(target_col, "black")  # fallback if a metabolite is missing from the dict
+
+            ax1.plot(all_logistic_preds_concs[f"{target_col}_times"],
                      all_logistic_preds_concs[f"{target_col}_mean"],
-                     linewidth=2, label=target_col)
-            color = line.get_color()
+                     linewidth=2, label=target_col, color=color)
             ax1.fill_between(all_logistic_preds_concs[f"{target_col}_times"],
                              all_logistic_preds_concs[f"{target_col}_lower"],
                              all_logistic_preds_concs[f"{target_col}_upper"],
@@ -598,7 +621,6 @@ with PdfPages(pdf_out) as pdf:
         ax1.set_xlabel('Time (hours)')
         ax1.set_ylabel('Scaled Concentration (mMol)')
         ax1.set_title(group_name)
-        # ax1.legend()
         ax1.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3)
         plt.tight_layout()
         pdf.savefig()

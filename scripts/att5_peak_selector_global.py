@@ -733,13 +733,12 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
 
         inner_mask = (x_data >= left) & (x_data <= right)
         x_inner    = x_data[inner_mask]
-        areas      = []
+        areas      = [None] * n_traces_total  # None placeholder for masked traces
 
         for t in range(n_traces_total):
             if not trace_mask[t]:
-                areas.append(0.0)
                 tl = f"{real_times[t]:.1f}" if real_times is not None else str(t)
-                print(f"  Trace {t:3d} (t={tl:>6s}): MASKED")
+                print(f"  Trace {t:3d} (t={tl:>6s}): MASKED (pending nearest-neighbor fill)")
                 continue
 
             peak_area = 0.0
@@ -752,10 +751,27 @@ def interactive_peak_selector_global(x_data, y_data_all, ref_ppm, label,
                 tp.add(name=prefix + 'sigma',     value=fp[prefix + "sigma"].value)
                 peak_area += np.trapz(model.eval(tp, x=x_inner), x_inner)
 
-            areas.append(peak_area)
+            areas[t] = peak_area
             tl = f"{real_times[t]:.1f}" if real_times is not None else str(t)
             print(f"  Trace {t:3d} (t={tl:>6s}): {peak_area:12.4e}  "
                   f"(baseline={bl:.4e} excluded)")
+
+        # ---- nearest-neighbor fill for masked traces ---------------------
+        # Masked traces (previously 0.0) now take the area of the nearest
+        # active trace by index distance. Ties resolve to the lower index.
+        if len(active_indices) > 0:
+            for t in range(n_traces_total):
+                if trace_mask[t]:
+                    continue
+                dists   = np.abs(active_indices - t)
+                nearest = active_indices[np.argmin(dists)]
+                areas[t] = areas[nearest]
+                tl = f"{real_times[t]:.1f}" if real_times is not None else str(t)
+                print(f"  Trace {t:3d} (t={tl:>6s}): filled from nearest "
+                      f"active trace {nearest} -> {areas[t]:12.4e}")
+        else:
+            # No active traces at all — fall back to 0.0 to avoid None leaking out
+            areas = [0.0 if a is None else a for a in areas]
 
         outer_window_state.update({
             "lower_ppm_bound": left,

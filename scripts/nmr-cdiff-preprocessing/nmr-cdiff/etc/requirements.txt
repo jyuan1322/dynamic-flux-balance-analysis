@@ -1,0 +1,8 @@
+cobra
+matplotlib
+nmrglue @ https://github.com/jjhelmus/nmrglue/tarball/master
+numpy
+openpyxl
+pandas
+scipy
+xlsxwriter

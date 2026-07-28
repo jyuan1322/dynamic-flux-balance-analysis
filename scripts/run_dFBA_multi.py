@@ -277,7 +277,8 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
     return evaluate
 '''
 def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign: bool = True,
-                           bound_scale: float = 1.0, leak: float = 0.0, leak_tol: float = 1e-4,
+                           bound_scale: float = 1.0, bound_widen: float = 0.0,
+                           leak: float = 0.0, leak_tol: float = 1e-4,
                            scale_factor: float = 1.0):
     df = df_params.copy()
 
@@ -314,6 +315,11 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
 
         lower = mean - (mean - lower) * bound_scale
         upper = mean + (upper - mean) * bound_scale
+
+        # additive widening, in the same units as the flux (mMol/hr) —
+        # applied after the multiplicative bound_scale, symmetric on both sides
+        lower -= bound_widen
+        upper += bound_widen
 
         # if mean >= 0:
         #     lower = max(lower, 0)
@@ -842,6 +848,7 @@ for rxn in model.reactions:
 
 model.solver = 'glpk'
 
+"""
 # ── PRINT AIDAN'S BOUNDS ─────────────────────────────────────────────────────
 print("Bounds after Aidan's block:")
 for rxn in model.reactions:
@@ -850,6 +857,7 @@ for rxn in model.reactions:
         print(f"  {rxn.id} ({rxn.name}): bounds=({rxn.lower_bound}, {rxn.upper_bound})")
 # exit()
 # ─────────────────────────────────────────────────────────────────────────────
+"""
 
 bound_scale_test = {}
 if "dfba_bound_scale_test" in config:
@@ -858,31 +866,42 @@ if "dfba_bound_scale_test" in config:
         if k not in config.defaults()
     }
 
+bound_widen_test = {}
+if "dfba_bound_widen_test" in config:
+    bound_widen_test = {
+        k: float(v) for k, v in config["dfba_bound_widen_test"].items()
+        if k not in config.defaults()
+    }
+
 constraints = {}
 dfba_consts = {k:v for k, v in config["dfba_constraints"].items() if k not in config.defaults()}
 for constraint, const_file in dfba_consts.items():
+    print(constraint, const_file)
     lg_df = pd.read_csv(os.path.join(config["dfba_params"]["logistic_param_dir"], const_file))
     flip_sign = constraint.startswith("Ex_")
 
     scale_factor = bound_scale_test.get(constraint, 1.0)
+    bound_widen = bound_widen_test.get(constraint, 0.0)
     if scale_factor != 1.0:
         print(f"[dfba_bound_scale_test] Applying {scale_factor}x to {constraint}")
+    if bound_widen != 0.0:
+        print(f"[dfba_bound_widen_test] Widening {constraint} bounds by +/- {bound_widen}")
 
     flux_fn = make_logistic_deriv_fn(lg_df,
                                      ci=0.95,
                                      flip_sign=flip_sign,
-                                     bound_scale=3.0,
+                                     bound_scale=1.0,
+                                     bound_widen=bound_widen,
                                      leak=1e-6,
                                      leak_tol=1e-4,
                                      scale_factor=scale_factor)
     constraints[constraint] = MetaboliteConstraint(constraint, flux_fn)
-"""
+
 for rxn_id, constraint in constraints.items():
     print(f"\n--- {rxn_id} ---")
     for t in [0, 10, 20, 30, 40]:
         lb, ub = constraint.get_bounds(t)
         print(f"  t={t}: lb={lb:.4f}, ub={ub:.4f}")
-"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -253,8 +253,8 @@ model {
     amp1 ~ normal(0, 0.5);              // no sparsity: first transition always allowed
     amp2_raw ~ normal(0, 1);
     lambda2 ~ normal(0, tau2);    // half-normal, shrinks amp2 toward 0
-    C1 ~ normal(0.5, 0.3);
-    C2 ~ normal(0.5, 0.3);
+    C1 ~ normal(0.5, 0.5);
+    C2 ~ normal(0.5, 0.5);
     D1_mag ~ student_t(3, 0, 1);
     D2_mag ~ student_t(3, 0, 1);
     sigma ~ student_t(3, 0, 0.1);

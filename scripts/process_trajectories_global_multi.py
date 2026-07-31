@@ -554,6 +554,40 @@ else:
                 scale_factors[metab] = (float(ratio_slope) * dss_known_conc
                                          / df_grouped["DSS"])
 
+    # --- NEW: scale_mMol_to_glc_ratio ---
+    # [y]/area(y) = m * [glc]/area(glc)   =>   scale_factor(y) = m * scale_factor(glc)
+    # Requires 13C_Glucose's own scale_factor to already be computed above
+    # (via scale_mMol_to_initial or scale_mMol_to_dss).
+    if "scale_mMol_to_glc_ratio" in config:
+        if "13C_Glucose" not in scale_factors.columns or (scale_factors["13C_Glucose"] == 1.0).all():
+            raise ValueError(
+                "scale_mMol_to_glc_ratio requires 13C_Glucose to already have a "
+                "non-default scale factor from scale_mMol_to_initial or scale_mMol_to_dss."
+            )
+        glc_scale_factor = scale_factors["13C_Glucose"].iloc[0]
+        for metab, ratio_slope in config["scale_mMol_to_glc_ratio"].items():
+            if metab in config.defaults():
+                continue
+            if metab in df_grouped.columns:
+                scale_factors[metab] = float(ratio_slope) * glc_scale_factor
+
+    # --- NEW: scale_mMol_to_asymptote ---
+    # scale_factor(y) = target_concentration / (raw-area upper asymptote of the logistic fit)
+    # Requires `logistic_params` (built earlier from the raw-area logistic fits,
+    # with a "final_level" column = A + amp1 + amp2 on the raw-area scale).
+    if "scale_mMol_to_asymptote" in config:
+        for metab, target_conc in config["scale_mMol_to_asymptote"].items():
+            if metab in config.defaults():
+                continue
+            if metab in df_grouped.columns and metab in logistic_params.index:
+                asymptote_area = logistic_params.loc[metab, "final_level"]
+                if asymptote_area == 0:
+                    raise ValueError(f"Asymptote area for {metab} is 0; cannot scale.")
+                scale_factors[metab] = float(target_conc) / asymptote_area
+            elif metab in df_grouped.columns:
+                print(f"WARNING: {metab} listed under scale_mMol_to_asymptote but "
+                      f"missing from logistic_params — skipped, scale_factor stays 1.0")
+
     df_grouped_conc = df_grouped.copy()
     for metab in metabolites:
         df_grouped_conc[metab] = scale_factors[metab] * df_grouped[metab]

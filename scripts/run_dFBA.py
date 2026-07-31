@@ -236,49 +236,11 @@ def plot_logistic_fit(logistic_df, corrected_times, scaled_concs, target_col):
     plt.tight_layout()
     plt.show()
 
-'''
-def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign: bool = True, buffer_val: float = None):
-    """
-    Returns a function `evaluate(t)` that evaluates all curves
-    in df_params at time t and returns the lower and upper CI.
 
-    df_params must have columns ['A', 'B', 'C', 'D'].
-    """
-    df = df_params.copy()  # store internally
-
-    required = ["A", "B", "C", "D"]
-    for col in required:
-        if col not in df.columns:
-            raise ValueError(f"Column {col} missing from DataFrame")
-
-    def evaluate(t: float):
-        # Compute all logistic derivatives at t
-        # values = df.apply( # This is the plain logistic, not the derivative
-        #     lambda row: row["A"] + (row["B"] - row["A"]) * expit((t - row["C"]) / row["D"]),
-        #     axis=1
-        # )
-        values = df.apply(
-            lambda row: (row["B"] - row["A"]) / row["D"] *
-                        expit((t - row["C"]) / row["D"]) *
-                        (1 - expit((t - row["C"]) / row["D"])),
-            axis=1
-        )
-        if flip_sign:
-            values = -1 * values # sign flip for intake into microbes
-        # Compute mean and confidence intervals
-        mean = values.mean()
-        lower = np.percentile(values, (1 - ci) / 2 * 100)
-        upper = np.percentile(values, (1 + ci) / 2 * 100)
-        if buffer_val is not None:
-            lower -= buffer_val
-            upper += buffer_val
-        return lower, upper
-
-    return evaluate
-'''
 def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign: bool = True,
-                           bound_scale: float = 1.0, leak: float = 0.0, leak_tol: float = 1e-4):
-    # buffer_val: float = None,
+                           bound_scale: float = 1.0, bound_widen: float = 0.0,
+                           leak: float = 0.0, leak_tol: float = 1e-4,
+                           scale_factor: float = 1.0):
     df = df_params.copy()
 
     required = ["A", "B", "C", "D"]
@@ -296,6 +258,11 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
         if flip_sign:
             values = -1 * values # sign flip for intake into microbes
 
+        # Experimental: uniformly scale the flux magnitude, to test
+        # sensitivity to potential concentration-estimation errors
+        # (e.g. DSS reference uncertainty) for this specific reaction.
+        values = values * scale_factor
+
         # Compute mean and confidence intervals
         mean = values.mean()
         lower = np.percentile(values, (1 - ci) / 2 * 100)
@@ -304,12 +271,11 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
         # widen bounds around mean without crossing zero
         lower = mean - (mean - lower) * bound_scale
         upper = mean + (upper - mean) * bound_scale
-        
-        # clamp to not cross zero
-        if mean >= 0:
-            lower = max(lower, 0)
-        else:
-            upper = min(upper, 0)
+
+        # additive widening, in the same units as the flux (mMol/hr) —
+        # applied after the multiplicative bound_scale, symmetric on both sides
+        lower -= bound_widen
+        upper += bound_widen
 
         # only add a leak if both bounds are near zero
         if abs(lower) <= leak_tol and abs(upper) <= leak_tol:
@@ -318,432 +284,11 @@ def make_logistic_deriv_fn(df_params: pd.DataFrame, ci: float = 0.95, flip_sign:
             else:
                 lower -= leak
 
-        # if buffer_val is not None:
-        #     lower -= buffer_val
-        #     upper += buffer_val
         return lower, upper
 
     return evaluate
 
 time_range = config["dfba_params"]["time_range"]
-
-'''
-# for csv_path in pro_csv_paths:
-for csv_path in leu_csv_paths:
-    plot_logistics = False
-    # exp_id = [p for p in csv_path.split('_') if 'Pro' in p][0]
-    exp_id = [p for p in csv_path.split('_') if 'Leu' in p][0]
-
-    get_time_correction(csv_path, isocaproate_col="isocaproate 0.8719", thresh=0.05, plot=True)
-
-    """
-    Initial concs from Xi's Powerpoint
-    Tryptophan | 0.490196078
-    Glycine | 1.333333333
-    Arginine | 1.149425287
-    Methionine | 1.342281879
-    Valine | 2.564102564
-    Threonine | 1.680672269
-    Isoluecine | 2.290076336
-
-    13C substrates, sometimes fixed to 15 mMol
-    #### SEE NEW xlsx file from Xi
-    13C_Glucose | 27.77777778 (?)
-    Proline | 6.956521739 (?)
-    Leucine | 7.633587786 (?)
-
-    Supp Table 12
-    Isobutyrate | 1.387 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
-    Isocaproate | 5.168 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
-    [Isovalerate missing NMR] 2.994 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
-
-    Extended data Fig. 7
-    13C_butyrate | 2.35 * [Glc] * (Product final area) / (Glc initial area)
-    13C_Acetate | 14.18 * [Glc] * (Product final area) / (Glc initial area)
-    13C_Alanine | 3.19 * [Glc] * (Product final area) / (Glc initial area)
-    13C_Ethanol | 4.93 * [Glc] * (Product final area) / (Glc initial area)
-
-    Formate |
-    13C_butanone |
-    2-aminobutyrate |
-
-    [Histidine removed, currently not consistently estimated]
-
-    5-aminovalerate (add constraint)
-
-    - can we assume all isobutyrate, isocaproate, isovalerate come from leucine?
-    - standard curves appear to be based on 13C spectra
-    """
-
-    # is isoluecine and valine, formate, isobutyrate - logistic curve fit
-    # estimated reaction fluxes 
-    # metabolized at the same time as leucine?
-
-
-
-    """
-    target_col = "13C_Leu 1.7912"
-    initial_concentration = 15.0 # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    leu_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Tryptophan 7.5354"
-    initial_concentration = 0.490196078 # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    trp_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Isoleucine 1.2272"
-    initial_concentration = 2.290076336 # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    ile_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Cysteine 3.3220"
-    initial_concentration = 4.132231405 # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    cys_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Proline 2.0540"
-    initial_concentration = 6.956521739 # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    pro_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Histidine 7.8415"
-    initial_concentration = 0.64516129 # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    his_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Gly 3.5467"
-    initial_concentration = 1.333333333 # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    gly_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Glucose 5.2321"
-    initial_concentration = 27.77777778 # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id, isocaproate_col="13C_Isocaproate 0.7453")
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    glc_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-    """
-
-    """
-    target_col = "Proline 4.2469"
-    initial_concentration = 15.0  # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    pro_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Glucose 5.2254"
-    initial_concentration = 27.77777778  # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    glc_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Valine 1.0253"
-    initial_concentration = 2.564102564  # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    val_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Leucine 0.9493"
-    initial_concentration = 7.633587786  # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    leu_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-
-    target_col = "Isoluecine 0.9258"
-    initial_concentration = 2.290076336  # mMol
-    lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, initial_concentration, exp_id)
-    if plot_logistics:
-        plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-    ile_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95)
-    """
-'''
-"""
-# create functions for both 13C and 1H experiments for Data7
-csv_path = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1/Data7_13CGlc1_13C_scaled_areas_10202025.csv"
-plot_logistics = False
-# exp_id = [p for p in csv_path.split('_') if 'Pro' in p][0]
-exp_id = "13CGlc1"
-
-# get_time_correction(csv_path, isocaproate_col="isocaproate 0.8719", thresh=0.05, plot=True)
-
-target_col = "13C_Glucose"
-initial_concentration = 27.5 # mMol
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-glc_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-
-temp_df = pd.read_csv(csv_path)
-# butyrate
-target_col = "13C_Butyrate"
-final_concentration = 27.5 * temp_df[target_col].iloc[-1] / temp_df["13C_Glucose"].iloc[0] * 1.587
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-but_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-# acetate
-target_col = "13C_Acetate"
-final_concentration = 27.5 * temp_df[target_col].iloc[-1] / temp_df["13C_Glucose"].iloc[0] * 0.775
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-ace_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-# alanine
-target_col = "13C_Alanine"
-final_concentration = 27.5 * temp_df[target_col].iloc[-1] / temp_df["13C_Glucose"].iloc[0] * 1.759
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-ala_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-# ethanol
-target_col = "13C_Ethanol"
-final_concentration = 27.5 * temp_df[target_col].iloc[-1] / temp_df["13C_Glucose"].iloc[0] * 1.172
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-eth_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-"""
-# add glucose products from Aidan's Glc1 experiment
-# csv_path = "/data/local/jy1008/MA-host-microbiome/dfba_JY/concentration_estimation/Data7_13CGlc1_13C_areas_aidan.csv"
-# plot_logistics = False
-# # exp_id = [p for p in csv_path.split('_') if 'Pro' in p][0]
-# exp_id = "13CGlc1"
-
-# get_time_correction(csv_path, isocaproate_col="isocaproate 0.8719", thresh=0.05, plot=True)
-"""
-target_col = "Glucose"
-initial_concentration = 27.5 # mMol
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-glc_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-
-temp_df = pd.read_csv(csv_path)
-# butyrate
-target_col = "Butyrate"
-final_concentration = 27.5 * temp_df[target_col].iloc[-1] / temp_df["Glucose"].iloc[0] * 2.35
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-but_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-# acetate
-target_col = "Acetate"
-final_concentration = 27.5 * temp_df[target_col].iloc[-1] / temp_df["Glucose"].iloc[0] * 14.18
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-ace_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-# alanine
-target_col = "Alanine"
-final_concentration = 27.5 * temp_df[target_col].iloc[-1] / temp_df["Glucose"].iloc[0] * 3.19
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-ala_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-# ethanol
-target_col = "Ethanol"
-final_concentration = 27.5 * temp_df[target_col].iloc[-1] / temp_df["Glucose"].iloc[0] * 4.93
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-eth_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-# add isovalerate from Leucine4 experiment    
-# Isobutyrate | 1.387 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
-# Isocaproate | 5.168 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
-# Isovalerate | 2.994 / (2.944 + 5.168 + 1.387) * [Leucine consumed]
-csv_path = "/data/local/jy1008/MA-host-microbiome/dfba_JY/concentration_estimation/Data4_13CLeu1_13C_areas_aidan.csv"
-plot_logistics = False
-exp_id = "13CGlc1"
-
-target_col = "Leucine"
-leucine_consumed = 7.63
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=leucine_consumed,
-                                                          exp_id=exp_id, start_time=11.08)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-leu_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-
-target_col = "Isovalerate"
-leucine_consumed = 7.63
-final_concentration = 2.994 / (2.944 + 5.168 + 1.387) * leucine_consumed
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=11.08)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-isv_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-target_col = "Isocaproate"
-leucine_consumed = 7.63
-final_concentration = 5.168 / (2.944 + 5.168 + 1.387) * leucine_consumed
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=11.08)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-iso_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
-
-# add proline from Pro1 experiment
-csv_path = "/data/local/jy1008/MA-host-microbiome/dfba_JY/concentration_estimation/Data1_13CPro1_13C_areas_aidan.csv"
-plot_logistics = False
-exp_id = "13CGlc1"
-
-target_col = "Proline"
-initial_concentration = 6.96
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-pro_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True, buffer_val=0.3)
-# pro_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-
-target_col = "5-aminovalerate"
-final_concentration = 6.96 # same as proline initial conc
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-av5_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False, buffer_val=0.3)
-# av5_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)"""
-
-"""
-# add 1H experiment
-# create functions for both 13C and 1H experiments for Data7
-# csv_path = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1_1H_V2/Data7_13CGlc1_1H_scaled_areas_10202025.csv"
-csv_path = "/data/local/jy1008/MA-host-microbiome/dfba_JY/nmr_area_estimation/output/Data7_13CGlc1_1H_V2/Data7_13CGlc1_1H_scaled_areas_10202025_V2.csv"
-plot_logistics = False
-exp_id = "13CGlc1"
-
-target_col = "5-aminovalerate"
-final_concentration = 6.96 # same as proline initial conc
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-av5_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False, buffer_val=0.3)
-
-target_col = "Arginine"
-initial_concentration = 1.15
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-arg_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-
-target_col = "Histidine"
-initial_concentration = 0.65
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-his_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-
-target_col = "Isocaproate"
-final_concentration = 5.168 / (2.944 + 5.168 + 1.387) * leucine_consumed
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          final_concentration=final_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-iso_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False, buffer_val=0.4)
-
-target_col = "Leucine"
-initial_concentration = 7.63 # same as leucine_consumed
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-leu_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True, buffer_val=0.4)
-
-target_col = "Methionine"
-initial_concentration = 1.34
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-met_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-
-target_col = "Proline"
-initial_concentration = 6.96
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-pro_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True, buffer_val=0.3)
-
-target_col = "Threonine"
-initial_concentration = 1.68
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-thr_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-
-target_col = "Tryptophan"
-initial_concentration = 0.49
-lg_df, corrected_times, scaled_concs = logistic_inference(csv_path, target_col, 
-                                                          initial_concentration=initial_concentration,
-                                                          exp_id=exp_id, start_time=0)
-if plot_logistics:
-    plot_logistic_fit(lg_df, corrected_times, scaled_concs, target_col)
-thr_flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=True)
-"""
 
 # 1. Load model
 # objective = "ATP_sink"
@@ -753,81 +298,18 @@ modelfile = config["dfba_params"]["modelfile"]
 model = cb.io.load_json_model(modelfile)
 model.objective = objective
 
-##### Match Aidan's default bounds from load_model
-# for rxn in model.reactions:
-#     if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
-#         rxn.upper_bound *= 0.03
-#         # rxn.upper_bound = 0.03
-#     if rxn.id in ['Ex_valL', 'Ex_ileL']:
-#         rxn.upper_bound = 0
-#         # rxn.lower_bound = 0
-# model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
-# # model.reactions.Ex_glc.lower_bound = 0 
-# model.reactions.Ex_cysL.upper_bound = 1000
-# # model.solver = 'glpk'
-
-# nonzero upper bound reactions
-#   Ex_tyrL (Exchange L-tyrosine): bounds=(0.0, 0.0)
-#   Ex_pheL (Exchange L-phenylalanine): bounds=(0.0, 0.0)
-#   Ex_serL (Exchange L-serine): bounds=(0.0, 0.0)
-#   Ex_cysL (Exchange L-cysteine): bounds=(0.0, 4.13)
-#   Ex_glc (Exchange beta-D-glucose): bounds=(0.0, 2.5)
-#   Ex_argL (Exchange L-arginine): bounds=(0.0, 1.12)
-#   Ex_metL (Exchange L-methionine): bounds=(0.0, 1.3)
-#   Ex_proL (Exchange L-proline): bounds=(0.0, 5.22)
-#   Ex_aspL (Exchange L-aspartate): bounds=(0.0, 0.0)
-#   Ex_valL (Exchange L-valine): bounds=(0.0, 2.56)
-#   Ex_gly (Exchange glycine): bounds=(0.0, 1.33)
-#   Ex_leuL (Exchange L-leucine): bounds=(0.0, 3.05)
-#   Ex_ileL (Exchange L-isoleucine): bounds=(0.0, 2.29)
-#   Ex_gluL (Exchange L-glutamate): bounds=(0.0, 0.0)
-#   Ex_glnL (Exchange L-glutamine): bounds=(0.0, 0.0)
-#   Ex_asnL (Exchange L-asparagine): bounds=(0.0, 0.0)
-#   Ex_thrL (Exchange L-threonine): bounds=(0.0, 1.68)
-#   Ex_trpL (Exchange L-tryptophan): bounds=(0.0, 0.4)
-#   Ex_alaL (Exchange L-alanine): bounds=(0.0, 0.0)
-#   Ex_his (Exchange L-histidine): bounds=(0.0, 0.65)
-#   Ex_lysL (Exchange L-lysine): bounds=(0.0, 0.0)
-# valine causes infeasible solution
-# leucine causes infeasible solution
-# glycine
-# histidine causes an FVA crash
-# amino_rxns = ["Ex_cysL", "Ex_glc", "Ex_argL", "Ex_metL"
-#               "Ex_proL", "Ex_ileL", "Ex_thrL", "Ex_trpL"]
-
 amino_rxns = []
 
-# for rxn in model.reactions:
-#     if (rxn.id in amino_rxns): # bounds=(0.0, 4.13)
-#         rxn.upper_bound *= 0.03
-
-
 for rxn in model.reactions:
-    """
-    if (rxn.id.startswith('Ex_') and rxn.id.endswith('L')) or rxn.id in ['Ex_gly', 'Ex_his']:
-        rxn.upper_bound *= 0.03
-    if rxn.id in ['Ex_valL', 'Ex_ileL']:
-        rxn.upper_bound *= 0.03
-    """
     # May28 no butyrate?
     if rxn.id in ['Sec_but']:
         rxn.upper_bound = 0
 
 
-# model.reactions.Ex_glc.upper_bound = 0 # Aidan's version
-# model.reactions.Ex_cysL.upper_bound = 1000
-# model.reactions.ID_90.upper_bound = 100
-# model.reactions.ID_90.lower_bound = -100
-# model.reactions.ID_508.upper_bound = 100
-# model.reactions.ID_508.lower_bound = -100
-# model.reactions.Trans_h.upper_bound = 100
-# model.reactions.Trans_h.lower_bound = -100
-# model.reactions.ID_247.upper_bound = 100
-# model.reactions.ID_247.lower_bound = -100
-model.reactions.Sec_leuL.upper_bound = 100
-model.reactions.Sec_leuL.lower_bound = -100
-model.reactions.Sec_proL.upper_bound = 100
-model.reactions.Sec_proL.lower_bound = -100
+# model.reactions.Sec_leuL.upper_bound = 100
+# model.reactions.Sec_leuL.lower_bound = -100
+# model.reactions.Sec_proL.upper_bound = 100
+# model.reactions.Sec_proL.lower_bound = -100
 
 
 model.solver = 'glpk'
@@ -841,13 +323,42 @@ for rxn in model.reactions:
 # exit()
 # ─────────────────────────────────────────────────────────────────────────────
 
+bound_scale_test = {}
+if "dfba_bound_scale_test" in config:
+    bound_scale_test = {
+        k: float(v) for k, v in config["dfba_bound_scale_test"].items()
+        if k not in config.defaults()
+    }
+
+bound_widen_test = {}
+if "dfba_bound_widen_test" in config:
+    bound_widen_test = {
+        k: float(v) for k, v in config["dfba_bound_widen_test"].items()
+        if k not in config.defaults()
+    }
+
 constraints = {}
 dfba_consts = {k:v for k, v in config["dfba_constraints"].items() if k not in config.defaults()}
 for constraint, const_file in dfba_consts.items():
+    print(constraint, const_file)
     lg_df = pd.read_csv(os.path.join(config["dfba_params"]["logistic_param_dir"], const_file))
     flip_sign = constraint.startswith("Ex_")  # flip sign for uptake constraints
-    flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=flip_sign, bound_scale=1.0, leak = 1e-6, leak_tol = 1e-4)
-    # flux_fn = make_logistic_deriv_fn(lg_df, ci=0.95, flip_sign=False)
+
+    scale_factor = bound_scale_test.get(constraint, 1.0)
+    bound_widen = bound_widen_test.get(constraint, 0.0)
+    if scale_factor != 1.0:
+        print(f"[dfba_bound_scale_test] Applying {scale_factor}x to {constraint}")
+    if bound_widen != 0.0:
+        print(f"[dfba_bound_widen_test] Widening {constraint} bounds by +/- {bound_widen}")
+
+    flux_fn = make_logistic_deriv_fn(lg_df,
+                                     ci=0.95,
+                                     flip_sign=flip_sign,
+                                     bound_scale=1.0,
+                                     bound_widen=bound_widen,
+                                     leak=1e-6,
+                                     leak_tol=1e-4,
+                                     scale_factor=scale_factor)
     constraints[constraint] = MetaboliteConstraint(constraint, flux_fn)
 
 for rxn_id, constraint in constraints.items():
@@ -892,7 +403,8 @@ with PdfPages(pdf_out) as pdf:
 print(f"Constraint bounds saved to {pdf_out}")
 """
 
-# print Aidan's bounds
+
+"""
 import glob
 import matplotlib.cm as cm
 # the version on Github
@@ -949,6 +461,7 @@ if not os.path.exists(pdf_out):
 
     exit()
 # ─────────────────────────────────────────────────────────────────────────────
+"""
 
 
 
@@ -957,26 +470,6 @@ tracked_reactions = [
     for x in config["dfba_tracked_reactions"]["ids"].split(",")
     if x.strip()
 ]
-
-
-# # Test each constraint in isolation
-# # ── DIAGNOSTIC ──────────────────────────────────────────────────────────────
-# for rxn_id in constraints:
-#     with model:
-#         constraint = constraints[rxn_id]
-#         lb, ub = constraint.get_bounds(0)
-#         lb, ub = min(lb, ub), max(lb, ub)
-#         rxn = model.reactions.get_by_id(rxn_id)
-#         print(f"Trying {rxn_id}: flux_fn→({lb:.6f},{ub:.6f}), model bounds=({rxn.lower_bound},{rxn.upper_bound})")
-#         if ub < rxn.lower_bound:
-#             rxn.lower_bound = lb
-#             rxn.upper_bound = ub
-#         else:
-#             rxn.upper_bound = ub
-#             rxn.lower_bound = lb
-#         sol = model.optimize()
-#         print(f"  → {sol.status}")
-# # ────────────────────────────────────────────────────────────────────────────
 
 
 # 3. Run dFBA
@@ -993,22 +486,6 @@ sim = dFBA(
     tracked_reactions = tracked_reactions,
     fva=True
 )
-
-
-# # Check feasibility with the default objective before running dFBA
-# with model:
-#     sol = model.optimize()
-#     print("Status:", sol.status)
-#     print("Objective value:", sol.objective_value)
-#     
-#     # Print exchange reaction bounds that might be problematic
-#     for rxn in model.reactions:
-#         if rxn.id.startswith('Ex_') or rxn.id.startswith('Sec_'):
-#             if rxn.lower_bound == 0 and rxn.upper_bound == 0:
-#                 print(f"BLOCKED: {rxn.id}")
-#             elif rxn.upper_bound < 0.1 and rxn.upper_bound >= 0:
-#                 print(f"Near-zero UB: {rxn.id} bounds=({rxn.lower_bound}, {rxn.upper_bound})")
-
 
 
 try:
@@ -1030,24 +507,7 @@ for rxn in sim.tracked_reactions:
 fva_df = pd.DataFrame(fva_data, index=completed_times)
 df = sim.solution_fluxes.dropna(how='all').join(fva_df)
 
-    # reactions = ["ID_314", "ID_314_min", "ID_314_max"]
-    # reactions = ["ATP_sink", "Trans_glc", "Ex_proL", "Ex_leuL", 
-    #                        "Ex_valL", "Ex_ileL", "Ex_thrL", "Sec_ac", 
-    #                        "Ex_alaL", "Ex_cysL", "Sec_ppa", "Sec_2abut", "ID_326"]
-    # colors = plt.cm.tab20.colors  # 20 colors
-    # plt.rc('axes', prop_cycle=cycler('color', plt.cm.tab20.colors))
-    # plt.rc('axes', prop_cycle=cycler('color', plt.cm.tab10.colors))
-    # reactions = ["Trans_glc",
-    #              "Sec_ac", "Sec_ac_min", "Sec_ac_max",
-    #              "Sec_ppa", "Sec_ppa_min", "Sec_ppa_max",
-    #              "ID_326",
-    #              "Ex_leuL",
-    #              "ATP_sink"]
-    # reactions = ["ATP_sink", "ID_251", "ID_252", "ID_512", "ID_474", "ID_49",
-    #              "ID_280", "ID_321", "ID_146", "ID_366", "ID_1021311", "ID_1021312",
-    #              "ID_1021313", "PPAKr", "ATPsynth4_1", "BUK", "IACK", "ImzACK", "HPhACK"]
 plt.rc('axes', prop_cycle=cycler('color', plt.cm.tab20.colors))
-# df_conc = plot_integrated_fluxes(df, reactions, initial_conc=0)
 plot_raw_fluxes(df, tracked_reactions, 
                 outname=os.path.join(config["dfba_params"]["output_dir"], f"dfba_flux_out_{exp_name}"), 
                 model=model, plot_bounds=False)
@@ -1069,7 +529,6 @@ interesting_reactions = [
     if is_interesting_flux(flux_df[rxn], min_peak=0.05, min_range=0.25)
 ]
 
-# bounding_reactions = ["Ex_proL", "Ex_glc", "Ex_valL", "Ex_leuL", "Ex_ileL"]
 bounding_reactions = list(constraints.keys())
 interesting_reactions_gt2 = [
     rxn for rxn in flux_df.columns
@@ -1121,15 +580,6 @@ def plot_raw_fluxes_html(flux_df, reactions, model=None, outname="raw_fluxes.htm
     if display_plot:
         fig.show()
 
-# plot_raw_fluxes_html(flux_df, interesting_reactions, model=model, display_plot=False,
-#                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_all_{exp_name}.html'))
-# plot_raw_fluxes_html(flux_df, bounding_reactions, model=model, display_plot=False,
-#                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_bounding_{exp_name}.html'))
-# plot_raw_fluxes_html(flux_df, interesting_reactions_gt2, model=model, display_plot=False,
-#                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_gt2_{exp_name}.html'))
-# plot_raw_fluxes_html(flux_df, interesting_reactions_lt2, model=model, display_plot=False,
-#                      outname=os.path.join(config["dfba_params"]["output_dir"], f'interesting_fluxes_lt2_{exp_name}.html'))
-# Interesting reactions are the figure reactions and input constraints
 interesting_reactions_vis = ["ID_469", "ID_366", "ID_146", "ID_321", "ID_233", "ID_53", "ID_280",
                          "HydEB", "ICCoA-DHG-EB", "ID_314", "ID_383", "BUK", "ID_326", 
                          "ATPsynth4_1", "RNF-Complex", "ID_336", "ID_575", "ID_90",
@@ -1144,17 +594,12 @@ plot_raw_fluxes_html(flux_df, interesting_reactions, model=model, display_plot=F
 flux_df.to_csv(os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv'))
 
 
-
-
-
-
 # ------------------------------
 # Compare to NatChemBio Figure 3
 # ------------------------------
 
 # Load data
 dfall = pd.read_csv(
-    # os.path.join(config["dfba_params"]["output_dir"], f'dfba_fluxes_all_{exp_name}.csv')
     os.path.join(config["dfba_params"]["output_dir"], f'dfba_{exp_name}_fluxes.csv')
 )
 dfall = dfall.rename(columns={"Unnamed: 0": "Time"})
